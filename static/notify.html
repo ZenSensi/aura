@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Aura Notification</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">  <!-- colours and icons -->
+  <link rel="stylesheet" href="notify.css">
+</head>
+<body class="notify-body">
+
+  <!-- The "task done" card (notify.js fills it in) -->
+  <div class="card" id="card" role="status" title="Open Aura">
+    <div class="card-top">
+      <img src="logo-round.svg" class="card-logo" alt="">
+      <span class="card-app">Aura</span>
+      <span class="card-time">now</span>
+      <button class="card-close" id="close" title="Close" aria-label="Close"><i data-icon="x" data-size="14"></i></button>
+    </div>
+    <div class="card-main">
+      <span class="card-icon" id="icon"></span>
+      <div class="card-text">
+        <div class="card-title" id="title"></div>
+        <div class="card-msg" id="msg"></div>
+      </div>
+    </div>
+    <!-- Only on reminders -->
+    <div class="card-actions" id="actions" hidden>
+      <button class="card-btn" id="snooze"><i data-icon="clock" data-size="13"></i>Snooze 10 min</button>
+      <button class="card-btn" id="done"><i data-icon="check" data-size="13"></i>Done</button>
+    </div>
+    <div class="card-timer" id="timer"></div>
+  </div>
+
+<script src="icons.js"></script>
+<script src="notify.js"></script>
+</body>
+</html>

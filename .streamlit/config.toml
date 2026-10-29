@@ -1,0 +1,7 @@
+# Streamlit theme for Aura
+[theme]
+primaryColor = "#6366f1"
+font = "sans serif"
+
+[browser]
+gatherUsageStats = false
