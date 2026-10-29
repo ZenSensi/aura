@@ -2,7 +2,7 @@
 main.py - Terminal version of Aura.
 
 The Orchestrator plans each request; we just print the events it yields.
-(For the web version run:  streamlit run app.py)
+(For the desktop app run:  python desktop.py)
 
 Run:  python main.py
 """

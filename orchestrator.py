@@ -6,7 +6,7 @@ run_request()  -> runs every step with the right agent, sharing one state dict
 
 run_request() is a GENERATOR: it "yields" an event after each stage
 (planning, plan ready, step started, step finished...). Both the terminal
-(main.py) and the web UI (app.py) loop over these events to show progress
+(main.py) and the desktop app (desktop.py) loop over these events to show progress
 live. That way the agent logic is written once and used by both screens.
 """
 

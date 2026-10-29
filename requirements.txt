@@ -3,6 +3,5 @@ python-dotenv>=1.0
 pywebview>=5.0
 pillow>=10.0
 pymupdf>=1.24      # reads PDFs for the Reader agent
-streamlit>=1.48    # width="stretch" on buttons
 google-auth-oauthlib>=1.2   # phone reminders: Google Tasks + Calendar sign-in
 pyinstaller>=6.0,<7         # builds Aura.exe (build_exe.bat)

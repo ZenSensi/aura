@@ -197,7 +197,6 @@ Set `VOICE_LANGUAGE` in `config.py` (default `"en"`; e.g. `"hi"` for Hindi).
 |:--|:--|
 | **Desktop app from source** (recommended while developing) | `python desktop.py` |
 | **Build a single `Aura.exe`** | `build_exe.bat`, then double-click `Aura.exe` |
-| Older browser UI (Streamlit) | `streamlit run app.py` |
 | Terminal only | `python main.py` |
 
 The desktop app opens in its own native window (pywebview) — no browser and no web server. Keep `Aura.exe` in
@@ -301,7 +300,7 @@ aura/
 ├── run_tests.py          # Labelled test requests (dry run)
 ├── data_analysis.ipynb   # Data analysis notebook
 ├── data/clinc150/        # CLINC150 public dataset (CC BY 3.0)
-├── app.py, main.py       # Streamlit UI and terminal version
+├── main.py               # Terminal version
 ├── build_exe.bat         # Builds Aura.exe with PyInstaller
 ├── .env.example          # Template for your API keys
 └── contacts.example.json # Template for WhatsApp contacts
