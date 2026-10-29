@@ -61,7 +61,7 @@ def call_model(choice, messages):
 
     try:
         text = response.json()["choices"][0]["message"]["content"]
-    except (ValueError, KeyError, IndexError):
+    except (ValueError, KeyError, IndexError, TypeError):  # e.g. "choices": null
         raise LLMError("Unexpected response format from API.")
     if not text:
         raise LLMError("Model returned an empty reply.")
@@ -82,7 +82,8 @@ def call_llm(agent_name, messages):
     chain = [settings]
     if settings.get("fallback"):
         chain.append(settings["fallback"])
-    if config.LAST_RESORT and config.PROVIDERS[config.LAST_RESORT["provider"]]["api_key"]:
+    if (config.LAST_RESORT and config.PROVIDERS[config.LAST_RESORT["provider"]]["api_key"]
+            and not settings.get("no_last_resort")):
         chain.append(config.LAST_RESORT)
 
     for position, choice in enumerate(chain):

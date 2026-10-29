@@ -25,6 +25,11 @@ python -m PyInstaller --noconfirm --clean --windowed --onefile ^
   --exclude-module uvicorn --exclude-module pytest --exclude-module IPython ^
   --distpath . --workpath build ^
   desktop.py
+if errorlevel 1 (
+  echo.
+  echo Build FAILED - see the messages above. Aura.exe was not updated.
+  exit /b 1
+)
 
 echo.
 echo Done. Double-click "Aura.exe" to start.

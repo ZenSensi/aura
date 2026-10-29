@@ -128,6 +128,8 @@ def stop():
         if time.time() - rec["started"] < 0.6 or _loudness(AUDIO_FILE) < QUIET:
             return ""  # too short or silent: don't let Whisper guess words
         return transcribe(AUDIO_FILE)
+    except (OSError, EOFError, wave.Error, KeyError) as e:  # missing / broken recording, unknown provider
+        raise VoiceError(f"Couldn't read the recording ({type(e).__name__}). Try again.")
     finally:
         _delete_audio()  # the recording is never kept
 

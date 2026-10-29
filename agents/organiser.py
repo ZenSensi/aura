@@ -127,9 +127,10 @@ def organise(root, label):
             except OSError:  # e.g. the file is open in another program
                 skipped += 1
     finally:
-        with open(UNDO_FILE, "w", encoding="utf-8") as f:
-            json.dump({"folder": label, "time": datetime.now().isoformat(timespec="seconds"),
-                       "moves": [[s, t] for s, t, _ in done], "created": created}, f, indent=1)
+        if done:  # a run that moved nothing keeps the last undo list
+            with open(UNDO_FILE, "w", encoding="utf-8") as f:
+                json.dump({"folder": label, "time": datetime.now().isoformat(timespec="seconds"),
+                           "moves": [[s, t] for s, t, _ in done], "created": created}, f, indent=1)
     return done, skipped
 
 

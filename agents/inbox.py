@@ -126,7 +126,11 @@ def fetch_emails(plan):
 
     emails = []
     with imaplib.IMAP4_SSL("imap.gmail.com", 993, timeout=config.API_TIMEOUT_SECONDS) as imap:
-        imap.login(config.GMAIL_ADDRESS, config.GMAIL_APP_PASSWORD)
+        try:
+            imap.login(config.GMAIL_ADDRESS, config.GMAIL_APP_PASSWORD)
+        except imaplib.IMAP4.error:
+            raise ValueError("Gmail refused the sign-in. Check GMAIL_ADDRESS and use a 16-letter App Password "
+                             "(Settings), not your normal password.")
         imap.select("INBOX", readonly=True)            # readonly = nothing can change
         _, data = imap.search(None, *build_search(plan))
         numbers = data[0].split()[-plan["limit"]:]      # the newest ones are at the end

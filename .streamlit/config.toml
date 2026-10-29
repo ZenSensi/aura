@@ -5,3 +5,7 @@ font = "sans serif"
 
 [browser]
 gatherUsageStats = false
+
+[server]
+# Only this PC can open the page: it can send email and open apps
+address = "localhost"

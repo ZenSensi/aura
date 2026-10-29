@@ -305,8 +305,9 @@ def label_of(kind, item):
     return item["text"] if kind == "reminders" else item["name"]
 
 
-def find(name):
-    """(kind, item) whose name best matches the words (e.g. 'news routine' -> 'Morning news'), or (None, None)."""
+def find(name, strict=False):
+    """(kind, item) whose name best matches the words (e.g. 'news routine' -> 'Morning news'), or (None, None).
+    strict: every word must match (used before deleting, so a half match can't remove the wrong item)."""
     words = [w for w in re.findall(r"[a-z0-9]+", str(name or "").lower())
              if w not in ("the", "my", "routine", "reminder", "workflow", "a", "to", "about")]
     if not words:
@@ -321,7 +322,7 @@ def find(name):
                 score = 2  # the exact name wins
             if score > best_score:
                 best, best_score = (kind, item), score
-    return best if best_score >= 0.5 else (None, None)
+    return best if best_score >= (1 if strict else 0.5) else (None, None)
 
 
 def change(item_id, **fields):

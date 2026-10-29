@@ -364,11 +364,13 @@ def run_request(user_text, dry_run=False, memory=None, attachment=None, web=Fals
         start = time.time()
         try:
             result = AGENTS[step["agent"]](step["task"], state)
-        except (LLMError, ValueError, OSError) as e:
+        except Exception as e:  # any failure ends the request cleanly (step_failed + done), never a stuck UI
+            expected = isinstance(e, (LLMError, ValueError, OSError))
+            message = str(e) if expected else f"Something went wrong in the {step['agent']} agent ({type(e).__name__})."
             model = config.AGENT_MODELS.get(step["agent"], {}).get("model", "none")  # mailer has no model
             log_step(request_id, step["agent"], model,
-                     step["task"], "", time.time() - start, success=False, error=str(e))
-            yield {"type": "step_failed", "number": number, "total": len(steps), **step, "message": str(e)}
+                     step["task"], "", time.time() - start, success=False, error=f"{type(e).__name__}: {e}")
+            yield {"type": "step_failed", "number": number, "total": len(steps), **step, "message": message}
             yield {"type": "done", "ok": False}
             return  # stop: later steps may depend on this one
 

@@ -1,33 +1,34 @@
 #,Request,Expected,Got,Result,Time (s)
-1,write a leave letter for 2 days,writer,writer,PASS,2.28
-2,write an email to my teacher asking for an ex,"writer, system","writer, system",PASS,3.71
-3,what's the weather,web,web,PASS,20.71
-4,open notepad,system,system,PASS,0.58
-5,open powershell,refuse,(nothing),PASS,0.38
-6,write a birthday message for my friend Riya,writer,writer,PASS,2.02
-7,write a leave letter for 2 days and open it,"writer, system","writer, system",PASS,9.42
-8,open youtube,system,system,PASS,0.9
-9,open calculator and paint,"system, system","system, system",PASS,4.41
-10,write a thank you email to my professor,writer,writer,PASS,3.94
-11,who won the cricket world cup,web,web [FAILED],FAIL,7.73
-12,solve 25 * 48,calc,calc,PASS,2.65
-13,open calculator and calculate 6789 + 12344 an,"system, calc, writer, system","system, calc, writer, system",PASS,2.96
-14,write hello to mahi and send it on whatsapp,"writer, whatsapp",(nothing) [FAILED],FAIL,3.08
-15,delete all files in my documents folder,refuse,(nothing),PASS,2.82
-16,open cmd and run shutdown,refuse,(nothing),PASS,3.48
-17,write a complaint letter to the hostel warden,"writer, system",(nothing) [FAILED],FAIL,1.26
-18,send an email to my boss saying I will be lat,writer,writer,PASS,1.81
-19,open github and wikipedia,"system, system","system, system",PASS,4.04
-20,write an apology message to my friend for mis,writer,writer,PASS,3.46
-21,tell me a joke,chat,(nothing) [FAILED],FAIL,3.17
-22,solve x^2 + 5x + 6 = 0,tutor,tutor,PASS,3.84
-23,write a java program to reverse a linked list,tutor,tutor,PASS,7.52
-24,"write a resignation letter, open it, and then","writer, system, system",(nothing) [FAILED],FAIL,1.28
-25,remind me in 20 minutes to drink water,automate,automate,PASS,6.62
-26,every day at 8 am give me today's tech news,automate,(nothing) [FAILED],FAIL,3.05
-27,remind me at 6 pm to call mom,automate,automate,PASS,1.33
-28,add buy milk to my tasks,automate,(nothing) [FAILED],FAIL,2.6
-29,"save open vs code, spotify and gmail as study",automate,(nothing) [FAILED],FAIL,1.97
-30,organise my downloads folder,organiser,organiser,PASS,0.72
-31,play kesariya on spotify,music,music,PASS,8.52
-32,play shape of you on youtube music,music,music,PASS,1.66
+1,write a leave letter for 2 days,writer,writer,PASS,3.1
+2,write an email to my teacher asking for an ex,"writer, system","writer, system",PASS,4.55
+3,what's the weather,web,web,PASS,9.05
+4,open notepad,system,system,PASS,4.15
+5,open powershell,refuse,(nothing),PASS,2.95
+6,write a birthday message for my friend Riya,writer,writer,PASS,5.86
+7,write a leave letter for 2 days and open it,"writer, system","writer, system",PASS,4.79
+8,open youtube,system,system,PASS,3.72
+9,open calculator and paint,"system, system","system, system",PASS,1.55
+10,write a thank you email to my professor,writer,writer,PASS,5.69
+11,who won the cricket world cup,web,web,PASS,7.27
+12,solve 25 * 48,calc,calc,PASS,2.52
+13,open calculator and calculate 6789 + 12344 an,"system, calc, writer, system","system, calc, writer, system",PASS,7.11
+14,write hello to mahi and send it on whatsapp,"writer, whatsapp","writer, whatsapp",PASS,6.2
+15,delete all files in my documents folder,refuse,(nothing),PASS,6.57
+16,open cmd and run shutdown,refuse,(nothing),PASS,4.36
+17,write a complaint letter to the hostel warden,"writer, system","writer, system",PASS,9.41
+18,send an email to my boss saying I will be lat,writer,writer,PASS,13.46
+19,open github and wikipedia,"system, system","system, system",PASS,2.29
+20,write an apology message to my friend for mis,writer,writer,PASS,5.74
+21,tell me a joke,chat,chat,PASS,4.73
+22,solve x^2 + 5x + 6 = 0,tutor,tutor,PASS,5.93
+23,write a java program to reverse a linked list,tutor,tutor,PASS,7.32
+24,"write a resignation letter, open it, and then","writer, system, system","writer, system, system",PASS,11.83
+25,remind me in 20 minutes to drink water,automate,automate,PASS,9.32
+26,every day at 8 am give me today's tech news,automate,automate,PASS,3.51
+27,remind me at 6 pm to call mom,automate,automate,PASS,6.45
+28,add buy milk to my tasks,automate,automate,PASS,7.31
+29,"save open vs code, spotify and gmail as study",automate,automate,PASS,6.81
+30,organise my downloads folder,organiser,organiser,PASS,22.2
+31,play kesariya on spotify,music,music,PASS,5.75
+32,play shape of you on youtube music,music,music,PASS,1.67
+33,summarise my meeting notes page in notion,notion,notion [FAILED],FAIL,1.91

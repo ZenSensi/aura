@@ -16,6 +16,9 @@ import config
 
 LOG_FILE = os.path.join(config.LOG_DIR, "run_log.jsonl")
 MAX_TEXT = 500  # cut long outputs so the log stays readable
+MAX_LOG_BYTES = 5_000_000  # past this, the log moves to run_log.1.jsonl (replacing the older one) and starts afresh
+# These agents handle letters, emails, messages and private files/pages: their text is not kept, only its length
+PRIVATE_AGENTS = {"writer", "mailer", "whatsapp", "inbox", "reader", "notion"}
 
 
 def short(text):
@@ -31,8 +34,8 @@ def log_step(request_id, agent, model, input_text, output, seconds, success, fal
         "request_id": request_id,
         "agent": agent,
         "model": model,
-        "input": short(input_text),
-        "output": short(output),
+        "input": f"[{len(str(input_text))} characters]" if agent in PRIVATE_AGENTS else short(input_text),
+        "output": f"[{len(str(output))} characters]" if agent in PRIVATE_AGENTS else short(output),
         "seconds": round(seconds, 2),
         "success": success,
         "fallback_used": fallback_used,
@@ -42,6 +45,8 @@ def log_step(request_id, agent, model, input_text, output, seconds, success, fal
     status = "OK  " if success else "FAIL"
     print(f"  [log] {status} {agent:12} {entry['seconds']:>6}s  {model}")
 
+    if os.path.exists(LOG_FILE) and os.path.getsize(LOG_FILE) > MAX_LOG_BYTES:
+        os.replace(LOG_FILE, os.path.join(config.LOG_DIR, "run_log.1.jsonl"))
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
@@ -52,8 +57,14 @@ def read_log():
     """Load all log entries as a list of dicts (empty list if no log yet)."""
     if not os.path.exists(LOG_FILE):
         return []
+    entries = []
     with open(LOG_FILE, encoding="utf-8") as f:
-        return [json.loads(line) for line in f if line.strip()]
+        for line in f:
+            try:
+                entries.append(json.loads(line))
+            except ValueError:  # blank, or cut off by a crash: skip it, keep the rest
+                continue
+    return entries
 
 
 def usage():

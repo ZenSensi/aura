@@ -41,15 +41,17 @@ function setupVoice(button, field) {
 
   button.addEventListener("click", async () => {
     if (state === "working") return;
+    // A failed call must still show a message and free the mic button
+    const call = (name) => voiceApi()[name]().catch(() => ({ ok: false, error: "Voice typing stopped working. Try again." }));
     if (state === "idle") {
       placeholder = field.placeholder;
-      const r = await voiceApi().voice_start();
+      const r = await call("voice_start");
       if (!r.ok) return flash(r.error);
       setState("listening", "Listening… click the mic again when you're done");
       return;
     }
     setState("working", "Turning speech into text…");
-    const r = await voiceApi().voice_stop();
+    const r = await call("voice_stop");
     if (!r.ok) return flash(r.error);
     if (!r.text) return flash("I didn't hear anything. Try again a bit closer to the mic.");
     setState("idle");

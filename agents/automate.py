@@ -106,7 +106,7 @@ def do_action(data, dry_run, now):
         return action, "", ""  # run_automate adds the list
 
     # remove / pause / resume one saved item
-    kind, item = automations.find(name or data.get("text") or data.get("task"))
+    kind, item = automations.find(name or data.get("text") or data.get("task"), strict=action == "remove")
     if not item:
         return "refuse", name, f"I couldn't find a saved routine, reminder or workflow called '{name}'."
     label = automations.label_of(kind, item)

@@ -38,7 +38,9 @@ SKIP_DIRS = {"node_modules", ".git", "__pycache__", "venv", ".venv", "appdata", 
              "site-packages", ".cache", "build", "dist"}
 
 # Opening these would RUN a program, so the UI only offers "Show in folder" for them
-RUNNABLE = {".exe", ".bat", ".cmd", ".ps1", ".vbs", ".js", ".msi", ".lnk", ".reg", ".scr", ".com", ".jar", ".py"}
+RUNNABLE = {".exe", ".bat", ".cmd", ".ps1", ".psm1", ".vbs", ".vbe", ".js", ".jse", ".wsf", ".wsh", ".hta", ".msi",
+            ".msix", ".msc", ".cpl", ".lnk", ".pif", ".url", ".scf", ".reg", ".scr", ".com", ".jar", ".py", ".chm",
+            ".appx", ".appref-ms", ".application", ".appinstaller", ".settingcontent-ms"}
 
 PLAN_PROMPT = f"""You are the Files agent of a desktop assistant. You SEARCH for files on the user's computer.
 Turn the task into a search plan.

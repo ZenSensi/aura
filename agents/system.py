@@ -56,6 +56,14 @@ def read_installed():
     return []  # Linux: only the fixed apps in config.py
 
 
+def runs_commands(launch):
+    """True if a Start-menu entry's target is a command-capable program, script or console package."""
+    app_id = launch[-1].split("shell:AppsFolder\\", 1)[-1].lower() if launch else ""
+    target = re.split(r"[\\/!]", app_id)[-1]
+    return (target in config.BLOCKED_APP_TARGETS or os.path.splitext(target)[1] in RUNNABLE - {".exe"}
+            or app_id.startswith(config.BLOCKED_APP_PACKAGES))
+
+
 def installed_apps():
     """{lower-case name: {"name", "launch"}} of installed apps that are NOT blocked."""
     global _installed
@@ -68,7 +76,7 @@ def installed_apps():
                 found = []
             for name, launch in found:
                 low = name.strip().lower()
-                blocked = any(word in low for word in config.BLOCKED_APP_WORDS)
+                blocked = any(word in low for word in config.BLOCKED_APP_WORDS) or runs_commands(launch)
                 blocked = blocked or bool(re.search(r"\.(txt|pdf|html?|url|chm|rtf|md)$", low))  # files, not apps
                 if low and not blocked and low not in config.ALLOWED_APPS:
                     _installed[low] = {"name": name.strip(), "launch": launch}

@@ -126,7 +126,8 @@ AGENT_MODELS = {
     },
     "vision": {  # the Reader's model for pictures and scanned PDFs (it can see images)
         "provider": "groq", "model": "qwen/qwen3.8-27b",
-        "fallback": {"provider": "openrouter", "model": "nvidia/nemotron-3.5-super-vl:free"},  # also vision
+        # No backup: free vision endpoints keep logs, and these are the user's own photos and scans
+        "no_last_resort": True,
     },
 }
 
@@ -224,6 +225,16 @@ BLOCKED_APP_WORDS = [
     "task scheduler", "services", "group policy", "system configuration", "computer management",
     "disk management", "recovery", "reset", "windows tools", "control panel", "remote desktop",
 ]
+
+# Start-menu entries that launch one of these programs are never opened either, whatever their name says.
+# Matched against the entry's target (the AppID), so a renamed shortcut can't get past the name check.
+BLOCKED_APP_TARGETS = {
+    "cmd.exe", "powershell.exe", "powershell_ise.exe", "pwsh.exe", "wt.exe", "wsl.exe", "bash.exe", "conhost.exe",
+    "regedit.exe", "mmc.exe", "wscript.exe", "cscript.exe", "mshta.exe", "rundll32.exe", "msiexec.exe", "control.exe",
+    "python.exe", "pythonw.exe", "py.exe", "node.exe", "microsoft.windows.shell.rundialog",
+}
+BLOCKED_APP_PACKAGES = ("microsoft.windowsterminal", "microsoft.powershell", "microsoft.windowssubsystemforlinux",
+                        "canonicalgrouplimited", "thedebianproject", "pythonsoftwarefoundation")
 
 ALLOWED_SITES = {
     "gmail":     "https://mail.google.com",

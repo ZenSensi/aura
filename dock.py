@@ -170,6 +170,7 @@ class Dock:
         self.shape = (*PILL, PILL[1] // 2)  # what is cut out now: (width, height, corner radius)
         self._target = self.shape            # what the page is animating towards
         self._generation = 0                 # newest shape request (older timers are ignored)
+        self._glass_run = 0                  # newest glass loop (an older one stops itself)
         self._last_glass = None
         self.media = NowPlaying(self._on_media)  # what is playing (only watched while the dock shows)
         self.window = webview.create_window(
@@ -267,12 +268,12 @@ class Dock:
         self.window.evaluate_js(f"setGlass('{urls[0]}', '{urls[1]}')")
         return True
 
-    def _glass_loop(self):
+    def _glass_loop(self, run):
         """Keep the glass live while the dock is on screen: fast while things move behind it."""
         wait = GLASS_SLOW
-        while self.visible:
+        while self.visible and run == self._glass_run:
             time.sleep(wait)
-            if self.visible:
+            if self.visible and run == self._glass_run:
                 try:
                     wait = GLASS_FAST if self._update_glass() else GLASS_SLOW
                 except Exception:
@@ -291,7 +292,8 @@ class Dock:
         self.window.show()  # pywebview's show() also makes the page inside visible
         self.window.evaluate_js("setDockMode('pill', true)")  # true = no animation
         self._reshape()
-        threading.Thread(target=self._glass_loop, daemon=True).start()
+        self._glass_run += 1  # hide + show quickly, or two show events: only this loop keeps running
+        threading.Thread(target=self._glass_loop, args=(self._glass_run,), daemon=True).start()
         self.media.start()
 
     def hide(self):

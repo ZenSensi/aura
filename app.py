@@ -34,6 +34,14 @@ AGENT_INFO = {
     "news":         ("📰", "News", "Daily news & market charts"),
     "calc":         ("🧮", "Calc", "Exact maths (no AI)"),
     "whatsapp":     ("💬", "WhatsApp", "Sends to saved contacts"),
+    "web":          ("🌐", "Web", "Searches the web"),
+    "reader":       ("📄", "Reader", "Reads files & images"),
+    "chat":         ("💭", "Chat", "Conversation"),
+    "tutor":        ("🎓", "Tutor", "Maths, science & code"),
+    "automate":     ("⏰", "Automate", "Reminders & routines"),
+    "organiser":    ("🗂️", "Organiser", "Tidies folders"),
+    "music":        ("🎵", "Music", "Spotify & YouTube Music"),
+    "notion":       ("📓", "Notion", "Your Notion pages"),
 }
 
 EXAMPLES = [
@@ -144,6 +152,8 @@ def show_event(event, ui, key):
             box.markdown(rows + f'<div class="meta">{html.escape(model_note(event))}</div>', unsafe_allow_html=True)
         else:
             box.update(label="🧠 Nothing I can do for this one", state="complete")
+            if event.get("reply"):  # why not, and what to try instead
+                box.markdown(html.escape(event["reply"]))
             box.markdown(f'<div class="meta">{html.escape(model_note(event))}</div>', unsafe_allow_html=True)
 
     elif kind == "step_start":
@@ -166,7 +176,9 @@ def show_event(event, ui, key):
         st.error(event["message"])
 
     elif kind == "done":
-        if event.get("nothing_to_do"):
+        if event.get("nothing_to_do") and event.get("reply"):
+            st.info(event["reply"])
+        elif event.get("nothing_to_do"):
             st.info(
                 "I can **write** letters and emails, **open** apps and sites, read your Gmail, "
                 "find files, get the news, do maths and send WhatsApp messages, but not that one. Try one of the examples in the sidebar!"
@@ -251,8 +263,10 @@ def draw_sidebar():
         st.divider()
         if st.button("🗑️ Clear chat", width="stretch"):
             st.session_state.messages = []
+            st.session_state.memory = {}
             st.rerun()
-        st.caption("🔒 Drafts only — nothing is ever sent. Only allowlisted apps and sites can be opened.")
+        st.caption("🔒 Emails and WhatsApp messages are sent only when you ask to send them, and only to "
+                   "addresses or saved contacts you name. Risky apps are blocked.")
 
 
 # ---------------------------------------------------------------
@@ -262,6 +276,8 @@ def main():
     st.markdown(CSS, unsafe_allow_html=True)
     if "messages" not in st.session_state:
         st.session_state.messages = []  # [{"role": "user", "text": ...} or {"role": "assistant", "events": [...]}]
+    if "memory" not in st.session_state:
+        st.session_state.memory = {}  # remembers the last answer, so follow-ups like "send this" work
 
     draw_sidebar()
 
@@ -301,7 +317,11 @@ def main():
                 for event in message["events"]:
                     show_event(event, ui, key=f"m{index}")
 
-    # Handle a new request: run the agents and draw events live
+    # Handle a new request: run the agents and draw events live.
+    # This page can send email and open apps, so it only acts for a browser on this PC.
+    if prompt and st.context.ip_address not in (None, "127.0.0.1", "::1", "localhost"):
+        st.error("Aura only takes requests from this computer.")
+        prompt = None
     if prompt:
         messages.append({"role": "user", "text": prompt})
         with st.chat_message("user", avatar="🧑‍🎓"):
@@ -310,7 +330,7 @@ def main():
         with st.chat_message("assistant", avatar="🤖"):
             ui, events = {}, []
             key = f"m{len(messages)}"  # index this assistant message will have
-            for event in run_request(prompt):
+            for event in run_request(prompt, memory=st.session_state.memory):
                 events.append(event)
                 show_event(event, ui, key=key)
         messages.append({"role": "assistant", "events": events})

@@ -100,9 +100,9 @@ and a **backup on a different provider**; if both fail, a **last-resort** free m
 | Tutor | `openai/gpt-oss-120b` on Groq, `reasoning_effort: high` | `gemini-3.5-flash` |
 | System | `qwen/qwen3.8-27b` on Groq | `gemini-3.5-flash-lite` |
 | Files | `openai/gpt-oss-20b` on Groq | `gemini-3.5-flash-lite` |
-| Reader (images, scanned PDFs) | `qwen/qwen3.8-27b` on Groq (vision) | `nvidia/nemotron-3.5-super-vl:free` on **OpenRouter** |
+| Reader (images, scanned PDFs) | `qwen/qwen3.8-27b` on Groq (vision) | none: your photos and scans are never sent to a free backup that keeps logs |
 | Voice typing | `whisper-large-v3-turbo` on Groq | — |
-| Every agent, if main and backup both fail | `openrouter/free` (OpenRouter's free-model router) | — |
+| Every agent except image reading, if main and backup both fail | `openrouter/free` (OpenRouter's free-model router) | — |
 
 All of this lives in **`config.py`** — the only file that names a model. Model names change often; check them
 against [Groq](https://console.groq.com/docs/models), [Gemini](https://ai.google.dev/gemini-api/docs/models) and
@@ -139,7 +139,7 @@ Open `.env` and paste your keys (see below), or start Aura and fill them in from
 | `GROQ_API_KEY` | Main model for most agents | [console.groq.com/keys](https://console.groq.com/keys) |
 | `GROQ_API_KEY_SYSTEM` | Orchestrator, System, Files, Inbox, Notion (own rate limit; can be the same key) | same |
 | `GEMINI_API_KEY` | Backup model | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) |
-| `OPENROUTER_API_KEY` | Last-resort free models, image backup | [openrouter.ai/keys](https://openrouter.ai/keys) |
+| `OPENROUTER_API_KEY` | Last-resort free models | [openrouter.ai/keys](https://openrouter.ai/keys) |
 | `TAVILY_API_KEY` | Web agent, Spotify song lookup | [tavily.com](https://tavily.com) (1,000 free searches/month) |
 | `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD` | Mailer and Inbox | [App passwords](https://myaccount.google.com/apppasswords) (needs 2-Step Verification) |
 | `USER_NAME` | Signing emails, the greeting | — |

@@ -83,7 +83,7 @@ def run_calc(task, state):
 
     shown = expression.replace("**", "^").replace("/100*", "% of ")
     shown = re.sub(r"\(([\d.]+)/100\)", r"\1%", shown).replace("*", "×")  # (18/100) -> 18%
-    state["last_answer"] = f"{shown} = {answer}"  # for the Writer
+    state["last_answer"] = state["calc_answer"] = f"{shown} = {answer}"  # for the Writer
 
     return {
         "agent": "calc", "model": "none (plain Python)", "seconds": round(time.time() - start, 2),

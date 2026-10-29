@@ -90,13 +90,17 @@ def search(query):
             for p in notion("POST", "/search", body).get("results", [])]
 
 
-def find_page(name):
-    """The one page the user named. Raises if none is shared with Aura."""
+def find_page(name, exact_only=False):
+    """The one page the user named. Raises if none is shared with Aura.
+    exact_only: the title must match exactly (before WRITING, so a near miss never gets the note)."""
     pages = [p for p in search(name) if p["object"] == "page"]
     if not pages:
         raise ValueError(f"No Notion page called '{name}' is shared with Aura. "
                          "In Notion: page '...' -> Connections -> add your integration.")
     exact = [p for p in pages if p["title"].lower() == name.lower()]
+    if exact_only and not exact:
+        close = ", ".join(f"'{p['title']}'" for p in pages[:5])
+        raise ValueError(f"No Notion page is called exactly '{name}'. Did you mean {close}? Say the full page name.")
     return (exact or pages)[0]
 
 
@@ -144,7 +148,7 @@ def run_notion(task, state):
             raise ValueError("What should I save to Notion? Type the words, or ask something first and say 'save it to Notion'.")
         if not name:
             raise ValueError("Which Notion page should I save it in? Name a page shared with Aura, e.g. 'add ... to my Notes page'.")
-        page = find_page(name)
+        page = find_page(name, exact_only=True)
         title = str(plan.get("title") or "").strip()[:100]
         if title:  # a new sub-page under the named page
             new = notion("POST", "/pages", {"parent": {"page_id": page["id"]},

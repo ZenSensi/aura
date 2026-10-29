@@ -25,6 +25,7 @@ import threading
 
 WATCH_SCRIPT = r"""
 $ErrorActionPreference = 'SilentlyContinue'
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false  # UTF-8, no BOM: song names with accents
 # NOTE: PowerShell names ignore case, so the types are $T... ($p would overwrite $P)
 Add-Type -AssemblyName System.Runtime.WindowsRuntime
 $asTask = [System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and

@@ -247,13 +247,15 @@ function onDockEvent(ev) {
       current.rows[ev.number] = makeRow(ev.agent, ev.task);
       break;
     case "step_done": {
-      const r = ev.result, row = current.rows[ev.number];
+      // The dock may have opened mid-run and missed this step's start: draw its row now
+      const r = ev.result, row = current.rows[ev.number] ||= makeRow(ev.agent, ev.task);
       const refused = r.action && r.action.action === "refuse";
       finish(row, refused ? "refused" : "done", refused ? "Refused" : "Done");
       summary(ev.agent, r, row.body);
       break;
     }
     case "step_failed":
+      current.rows[ev.number] ||= makeRow(ev.agent, ev.task);
       finish(current.rows[ev.number], "error", "Failed");
       current.rows[ev.number].body.appendChild(el("div", "", ev.message));
       break;
