@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Aura Dock</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">  <!-- colours, buttons, icons -->
+  <link rel="stylesheet" href="dock.css">
+</head>
+<body class="dock-body pill">
+
+  <!-- Collapsed: the pill. While music plays it shows the song instead (Now Playing, dock.js) -->
+  <button class="pill-btn" id="pill" title="Ask Aura">
+    <img src="logo-round.svg" class="pill-logo" alt="">
+    <span class="pill-art" id="pillArt"></span>
+    <span class="pill-text" id="pillText">Ask Aura anything…</span>
+    <span class="pill-song" id="pillSong"></span>
+    <span class="pill-dot" id="pillDot"></span>
+    <span class="eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+    <span class="pill-progress"><span id="pillBar"></span></span>
+  </button>
+  <!-- Play / pause / next: on top of the pill's right end, shown when you hover it -->
+  <div class="pill-controls" id="pillControls">
+    <button class="media-btn" data-media="previous" title="Previous"><i data-icon="skipBack" data-size="13"></i></button>
+    <button class="media-btn toggle" data-media="toggle" title="Play / pause"><i data-icon="pause" data-size="13"></i></button>
+    <button class="media-btn" data-media="next" title="Next"><i data-icon="skipNext" data-size="13"></i></button>
+  </div>
+
+  <!-- Expanded: input + results -->
+  <div class="panel" id="panel">
+    <form class="dock-input" id="dockForm" autocomplete="off">
+      <img src="logo.svg" class="dock-logo" alt="">
+      <input id="dockInput" maxlength="1000" placeholder="Give Aura a task… e.g. open VS Code and today's news">
+      <button type="button" class="dock-icon-btn mic" id="dockMic" title="Voice typing"><i data-icon="mic" data-size="16"></i></button>
+      <button type="submit" class="dock-icon-btn send" id="dockSend" title="Run"><i data-icon="send" data-size="16"></i></button>
+      <button type="button" class="dock-icon-btn" id="dockOpen" title="Open Aura"><i data-icon="open" data-size="16"></i></button>
+      <button type="button" class="dock-icon-btn" id="dockClose" title="Collapse (Esc)"><i data-icon="expand" data-size="16"></i></button>
+    </form>
+    <!-- Now Playing card (only while something plays) -->
+    <div class="now-card" id="nowCard">
+      <span class="now-art" id="nowArt"></span>
+      <div class="now-main">
+        <div class="now-title" id="nowTitle"></div>
+        <div class="now-artist" id="nowArtist"></div>
+        <div class="now-time">
+          <span id="nowPos">0:00</span>
+          <span class="now-bar"><span id="nowBar"></span></span>
+          <span id="nowDur">0:00</span>
+        </div>
+      </div>
+      <div class="now-controls">
+        <button class="media-btn" data-media="previous" title="Previous"><i data-icon="skipBack" data-size="15"></i></button>
+        <button class="media-btn toggle big" data-media="toggle" title="Play / pause"><i data-icon="pause" data-size="16"></i></button>
+        <button class="media-btn" data-media="next" title="Next"><i data-icon="skipNext" data-size="15"></i></button>
+      </div>
+    </div>
+    <div class="dock-results" id="dockResults"></div>
+  </div>
+
+<script src="icons.js"></script>
+<script src="voice.js"></script>
+<script src="dock.js"></script>
+</body>
+</html>
