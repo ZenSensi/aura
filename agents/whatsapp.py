@@ -73,6 +73,27 @@ def load_contacts():
     return contacts
 
 
+NUMBER_PATTERN = re.compile(r"\+?\(?\d[\d\s().-]{6,}\d")
+
+
+def parse_contacts_text(text):
+    """A .txt of contacts, one per line: "Mahi, +91 98765 43210" (or "Mahi: ...", "Mahi - ...", "+91... Mahi").
+    Returns ({name: number}, lines skipped). A line needs a name and an 8-15 digit number."""
+    found, skipped = {}, 0
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        match = NUMBER_PATTERN.search(line)
+        digits = re.sub(r"\D", "", match.group()) if match else ""
+        name = (line[:match.start()] + " " + line[match.end():]).strip(" \t,;:|-=") if match else ""
+        name = re.sub(r"\s+", " ", name)[:60]
+        if not name or not 8 <= len(digits) <= 15:
+            skipped += 1
+            continue
+        found[name] = ("+" if match.group().startswith("+") else "") + digits
+    return found, skipped
+
+
 def contact_in_request(request, contacts):
     """Names from contacts.json that the user typed in the request (whole words only)."""
     text = request.lower()
@@ -287,3 +308,13 @@ def run_whatsapp(task, state):
     time.sleep(0.2)
     press(VK_RETURN)
     return make_result("send_whatsapp", name, f"Sent on WhatsApp to {name.title()}: \"{text[:60]}\"", start)
+
+
+if __name__ == "__main__":  # self-check: python -m agents.whatsapp
+    sample = ("Mahi, +91 98765 43210\nMummy: 919123456789\n+44 7700 900123 John Smith\n"
+              "Riya - (91) 99887-76655\n\nno number here\n12345\nRahul\t+91 90000 11111\n")
+    got, skipped = parse_contacts_text(sample)
+    assert got == {"Mahi": "+919876543210", "Mummy": "919123456789", "John Smith": "+447700900123",
+                   "Riya": "919988776655", "Rahul": "+919000011111"}, got
+    assert skipped == 2, skipped
+    print("ok")

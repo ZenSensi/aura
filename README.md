@@ -170,8 +170,8 @@ WhatsApp Desktop must be installed and signed in.
    and **Google Calendar API**.
 2. OAuth consent screen: External, add your Gmail as a test user, then **Publish app** (in Testing mode Google signs
    you out every 7 days).
-3. Credentials → Create credentials → OAuth client ID → **Desktop app** → download the JSON and save it next to Aura
-   as `google_client.json`.
+3. Credentials → Create credentials → OAuth client ID → **Desktop app** → download the JSON and save it as
+   `google_client.json` in Aura's data folder (`%LOCALAPPDATA%\Aura` for the exe, see "Files" below).
 
 The first phone reminder opens Google's sign-in page; after that the permission is kept in `google_token.json`.
 Aura only asks for Tasks and Calendar, and only ever adds.
@@ -309,6 +309,8 @@ aura/
 
 Files Aura creates while running (not in the repository): `.env`, `contacts.json`, `google_client.json`,
 `google_token.json`, `automations.json`, `agents_off.json`, `outputs/`, `logs/run_log.jsonl`.
+They live in the project folder when run with Python. `Aura.exe` keeps them in `%LOCALAPPDATA%\Aura` (one set per
+Windows user, so the exe can be shared or installed anywhere), unless a `.env` sits next to the exe ("portable" mode).
 
 ## Troubleshooting
 

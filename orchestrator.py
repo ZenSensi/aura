@@ -151,6 +151,9 @@ Rules:
 - If the user asks you to WRITE/compose a WhatsApp message (e.g. "wish mahi happy birthday", "write a sorry
   message to papa"): a writer step "write a short WhatsApp message to <name> saying ... (this will be sent)",
   then a whatsapp step "send the last message to <name>".
+  The words "write", "compose" or "draft" ALWAYS mean a writer step first, even with words given:
+  "write hello to mahi and send it on whatsapp" = writer "write a short WhatsApp message to mahi saying hello
+  (this will be sent)", then whatsapp "send the last message to mahi".
   Do NOT add a system step to open WhatsApp (the whatsapp agent opens it).
 - To send a calc ANSWER on WhatsApp: after the calc step (and after the writer note, if the user also wants
   it in Notepad), a whatsapp step "send the answer to <name>".

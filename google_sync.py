@@ -61,7 +61,7 @@ def _credentials():
 
     if not ready():
         raise GoogleError("Google isn't set up yet: save your OAuth client file as google_client.json "
-                          "next to Aura (see the steps at the top of google_sync.py).")
+                          f"in {config.BASE_DIR} (see the steps at the top of google_sync.py).")
     with _lock:
         creds = None
         if os.path.isfile(TOKEN_FILE):

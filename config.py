@@ -18,10 +18,14 @@ from dotenv import load_dotenv, set_key
 
 # Folder where .env, outputs/ and logs/ live.
 # - Normal run (python desktop.py): the folder of this file.
-# - Packaged .exe (PyInstaller):    the folder of the .exe, so files are
-#   saved next to the program and not in a temporary folder.
+# - Packaged .exe (PyInstaller):    %LOCALAPPDATA%\Aura, so every Windows user
+#   gets their own keys and files and the .exe can live anywhere (even Program Files).
+#   A .env next to the .exe keeps the old "portable" mode: files stay beside it.
 if getattr(sys, "frozen", False):
     BASE_DIR = os.path.dirname(sys.executable)
+    if not os.path.isfile(os.path.join(BASE_DIR, ".env")):
+        BASE_DIR = os.path.join(os.getenv("LOCALAPPDATA") or os.path.expanduser("~"), "Aura")
+        os.makedirs(BASE_DIR, exist_ok=True)
 else:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 

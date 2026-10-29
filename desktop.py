@@ -39,7 +39,7 @@ from agents.system import open_file, installed_apps
 from logger import recent, usage
 from orchestrator import run_request, agents_off, set_agent_on
 from agents.inbox import find_contact_name
-from agents.whatsapp import load_contacts
+from agents.whatsapp import load_contacts, parse_contacts_text
 from agents.files import RUNNABLE, search_roots
 from agents.reader import FILE_TYPES as READABLE, kind_of as file_kind
 from dock import Dock, WIDTH as DOCK_WIDTH, HEIGHT as DOCK_HEIGHT
@@ -523,6 +523,35 @@ class Api:
                 f.write("{\n}\n")
         open_file(config.CONTACTS_FILE)
         return True
+
+    def import_contacts(self):
+        """Settings: pick a .txt of "name, number" lines and add them to contacts.json."""
+        choice = self._window.create_file_dialog(webview.OPEN_DIALOG, file_types=("Text files (*.txt)", "All files (*.*)"))
+        if not choice:
+            return None  # cancelled
+        path = choice if isinstance(choice, str) else choice[0]
+        if os.path.getsize(path) > 1024 * 1024:
+            return {"error": "That file is too big for a contacts list (the limit is 1 MB)."}
+        with open(path, encoding="utf-8-sig", errors="replace") as f:
+            found, skipped = parse_contacts_text(f.read())
+        if not found:
+            return {"error": "No contacts found. Put one per line, like: Mahi, +91 98765 43210"}
+        try:
+            with open(config.CONTACTS_FILE, encoding="utf-8") as f:
+                saved = json.load(f)
+        except FileNotFoundError:
+            saved = {}
+        except (OSError, ValueError):
+            return {"error": "contacts.json has a mistake: fix it first (Edit contacts), so nothing in it is lost."}
+        lower = {str(k).strip().lower(): k for k in saved}
+        updated = 0
+        for name, number in found.items():
+            key = lower.get(name.lower(), name)  # same name (any case) -> replace that number
+            updated += key in saved
+            saved[key] = number
+        with open(config.CONTACTS_FILE, "w", encoding="utf-8") as f:
+            json.dump(saved, f, indent=2, ensure_ascii=False)
+        return {"added": len(found) - updated, "updated": updated, "skipped": skipped, "settings": self.get_settings()}
 
 
 def already_running():

@@ -32,7 +32,7 @@ def call_model(choice, messages):
     # Use the entry's own key if it has one, otherwise the provider's key
     api_key = choice.get("api_key") or provider["api_key"]
     if not api_key:
-        raise LLMError(f"Missing API key for '{choice['provider']}'. Add it to your .env file.")
+        raise LLMError(f"Missing API key for '{choice['provider']}'. Add it in Settings.")
 
     # Every OpenAI-compatible API uses the same URL path and body format
     url = provider["base_url"] + "/chat/completions"

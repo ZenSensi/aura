@@ -1355,7 +1355,7 @@ const SET_KEYS = [  // [.env name, label, what it's for, icon]
   ["NOTION_TOKEN", "Notion", "Integration secret from notion.so/profile/integrations", "file"],
 ];
 const GOOGLE_TEXT = { connected: "Connected: reminders also go to your phone",
-                      signed_out: "Not connected", not_setup: "Needs google_client.json next to Aura (see google_sync.py)" };
+                      signed_out: "Not connected", not_setup: "Needs google_client.json in %LOCALAPPDATA%\\Aura (see README)" };
 
 function setInput(key, type, value, placeholder) {
   const input = el("input", "set-input");
@@ -1434,7 +1434,16 @@ function drawSettings(s) {
   conn.appendChild(setRow("clock", "Google Tasks & Calendar", GOOGLE_TEXT[s.google], s.google === "connected", google));
   const people = s.contacts < 0 ? "contacts.json has a mistake: open it to fix"
                : `${s.contacts} saved contact${s.contacts === 1 ? "" : "s"} · uses WhatsApp on this PC`;
-  conn.appendChild(setRow("chat", "WhatsApp", people, s.contacts > 0, setButton("Edit contacts", () => api().open_contacts())));
+  const importTxt = setButton("Import .txt", async () => {
+    const r = await api().import_contacts();
+    if (!r) return;  // cancelled
+    if (r.error) { $("setError").textContent = r.error; return; }
+    toast(`${r.added} added, ${r.updated} updated` + (r.skipped ? `, ${r.skipped} lines skipped` : ""));
+    drawSettings(r.settings);
+  });
+  importTxt.title = "One contact per line, like: Mahi, +91 98765 43210";
+  conn.appendChild(setRow("chat", "WhatsApp", people, s.contacts > 0, importTxt,
+                          setButton("Edit contacts", () => api().open_contacts())));
   body.appendChild(conn);
 
   // Aura
@@ -1500,5 +1509,9 @@ window.addEventListener("pywebviewready", () => {
   loadInfo();
   loadRecent();
   loadAutomations();
+  // First run on a new PC: no AI key yet, so nothing can work -> open Settings
+  api().get_settings().then((s) => {
+    if (!s.set.GROQ_API_KEY && !s.set.GEMINI_API_KEY) { openSettings(); toast("Add a free Groq or Gemini key to start"); }
+  });
 });
 input.focus();
