@@ -43,6 +43,7 @@ from agents.whatsapp import load_contacts, parse_contacts_text
 from agents.files import RUNNABLE, search_roots
 from agents.reader import FILE_TYPES as READABLE, kind_of as file_kind
 from dock import Dock, WIDTH as DOCK_WIDTH, HEIGHT as DOCK_HEIGHT
+from hotkey import Hotkey
 from notify import Notifier
 
 MAX_REQUEST_CHARS = 1000
@@ -130,6 +131,7 @@ class Api:
     def __init__(self):
         self._window = None
         self._dock = None
+        self._hotkey = None
         self._notifier = None
         self._lock = threading.Lock()  # one request at a time
         self._memory = {}  # the previous request's answer/file, for follow-ups like "send this answer"
@@ -473,7 +475,9 @@ class Api:
             contacts = len(load_contacts())
         except ValueError:
             contacts = -1  # contacts.json is broken
-        return {"email": config.GMAIL_ADDRESS, "name": config.USER_NAME,
+        dock = {"position": config.DOCK_POSITION, "shortcut": config.DOCK_SHORTCUT, "autohide": config.DOCK_AUTOHIDE,
+                "shortcut_ok": bool(self._hotkey and self._hotkey.text == config.DOCK_SHORTCUT)}
+        return {"email": config.GMAIL_ADDRESS, "name": config.USER_NAME, "dock": dock,
                 "set": {name: bool(os.getenv(name)) for name in SETTINGS},
                 "google": google, "contacts": contacts,
                 "startup": self.get_startup(), "can_startup": sys.platform == "win32"}
@@ -495,6 +499,28 @@ class Api:
                 changes[name] = value
         if changes:
             print(f"  [settings] saved {', '.join(sorted(changes))}")
+            config.save_env(changes)
+        return self.get_settings()
+
+    def set_dock(self, values):
+        """Settings > Dock: position, shortcut or autohide. Applies at once and is saved to .env."""
+        values = dict(values or {})
+        changes = {}
+        if "position" in values:
+            if values["position"] not in config.DOCK_POSITIONS:
+                return {"error": "Pick one of the dock positions."}
+            changes["DOCK_POSITION"] = values["position"]
+            self._dock.set_position(values["position"])
+        if "shortcut" in values:
+            shortcut = str(values["shortcut"])
+            if not self._hotkey.set(shortcut):
+                return {"error": f"{shortcut} can't be used: another app may have it. Try a different one."}
+            changes["DOCK_SHORTCUT"] = shortcut
+        if "autohide" in values:
+            changes["DOCK_AUTOHIDE"] = "1" if values["autohide"] else "0"
+            self._dock.set_autohide(bool(values["autohide"]))
+        if changes:
+            print(f"  [settings] dock {changes}")
             config.save_env(changes)
         return self.get_settings()
 
@@ -595,9 +621,12 @@ def main():
     # The dock: shown when the main window is minimised, hidden when it comes back
     dock = Dock(resource_path("static", "dock.html"), api)
     api._dock = dock
-    window.events.minimized += dock.show
-    window.events.restored += dock.hide
-    window.events.maximized += dock.hide
+    window.events.minimized += dock.on_minimized
+    window.events.restored += dock.on_restored
+    window.events.maximized += dock.on_restored
+    # The dock's shortcut works in every app (hotkey.py); if it is taken, Settings > Dock says so
+    api._hotkey = Hotkey(dock.shortcut)
+    window.events.shown += lambda: api._hotkey.set(config.DOCK_SHORTCUT)
 
     # The "task done" notification at the top-right of the screen
     notifier = Notifier(resource_path("static", "notify.html"), api)
@@ -605,6 +634,7 @@ def main():
 
     def close_helpers():  # closing Aura closes the dock and the notification too
         dock.media.stop()  # and the Now Playing watcher
+        api._hotkey.stop()
         dock.window.destroy()
         notifier.window.destroy()
     window.events.closed += close_helpers
@@ -613,7 +643,7 @@ def main():
     scheduler = automations.Scheduler(api._remind, api._start_routine)
     window.events.loaded += scheduler.start
     if minimized:
-        window.events.shown += dock.show
+        window.events.shown += dock.on_minimized
     webview.start()
 
 

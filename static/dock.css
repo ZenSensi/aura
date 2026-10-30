@@ -22,6 +22,16 @@ body.dock-body {
 body.dock-body.open { width: var(--card-w, 636px); height: var(--open-h, 72px); }  /* both set by dock.js */
 body.dock-body.instant { transition: none; }
 
+/* Position (Settings > Dock; dock.js sets html[data-pos], e.g. "bottom-left").
+   The body moves to that corner of the window and grows away from it; dock.py
+   cuts the window at the same spot. No transform on the body: it would break
+   the "fixed" glass background. */
+html { display: flex; flex-direction: column; }
+html[data-pos^="bottom"] { justify-content: flex-end; }
+html[data-pos^="bottom"] body.dock-body { margin-top: 0; margin-bottom: 2px; flex-shrink: 0; }
+html[data-pos$="left"] body.dock-body { margin-left: 2px; margin-right: auto; }
+html[data-pos$="right"] body.dock-body { margin-left: auto; margin-right: 2px; }
+
 /* ---------- Glass (like macOS) ----------
    --glass is a live, blurred picture of the screen right behind the dock
    (dock.py takes a new one twice a second; dock.js sets it). A light tint
@@ -83,6 +93,13 @@ body.open .panel {
   transition: opacity .3s ease .1s, transform .45s var(--ease), visibility 0s;
 }
 body.instant .pill-btn, body.instant .panel { transition: none; }
+/* In a corner the pill and the panel stay at the dock's side instead of its middle */
+html[data-pos$="left"] .pill-btn { left: 0; margin-left: 0; }
+html[data-pos$="right"] .pill-btn { left: auto; right: 0; margin-left: 0; }
+html[data-pos^="bottom"] .pill-btn, html[data-pos^="bottom"] .pill-controls { top: auto; bottom: 0; }
+html[data-pos$="left"] .panel { left: 0; transform: translateY(-6px); }
+html[data-pos$="right"] .panel { left: auto; right: 0; transform: translateY(-6px); }
+html[data-pos$="left"] body.open .panel, html[data-pos$="right"] body.open .panel { transform: none; }
 
 .dock-input {
   display: flex; align-items: center; gap: 8px;

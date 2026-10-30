@@ -1477,6 +1477,89 @@ function drawSettings(s) {
   aura.appendChild(setRow("folder", "Outputs folder", "Letters, emails and files Aura makes", false,
     setButton("Open", () => api().open_outputs_folder())));
   body.appendChild(aura);
+  body.appendChild(dockSettings(s));
+}
+
+/* Settings > Dock: position, shortcut and autohide. Each one applies at once (api.set_dock). */
+const DOCK_POSITIONS = [["top-left", "Top left"], ["top-mid", "Top middle"], ["top-right", "Top right"],
+                        ["bottom-left", "Bottom left"], ["bottom-mid", "Bottom middle"], ["bottom-right", "Bottom right"]];
+
+const DEFAULT_SHORTCUT = "`+Space";  // hold ` and press Space (hotkey.py)
+
+async function setDock(values) {
+  $("setError").textContent = "";
+  const r = await api().set_dock(values);
+  if (r.error) { $("setError").textContent = r.error; return null; }
+  return r;
+}
+
+// "Ctrl+Alt+Space" from a key press, or "" while only modifiers are down
+function shortcutText(e) {
+  const keys = { Space: "Space", Enter: "Enter", Tab: "Tab", Backspace: "Backspace", Insert: "Insert", Delete: "Delete",
+                 Home: "Home", End: "End", PageUp: "PageUp", PageDown: "PageDown", ArrowUp: "Up", ArrowDown: "Down",
+                 ArrowLeft: "Left", ArrowRight: "Right", Backquote: "`", Minus: "-", Equal: "=", BracketLeft: "[",
+                 BracketRight: "]", Semicolon: ";", Quote: "'", Comma: ",", Period: ".", Slash: "/", Backslash: "\\" };
+  const key = /^Key[A-Z]$/.test(e.code) ? e.code.slice(3) : /^Digit\d$/.test(e.code) ? e.code.slice(5)
+            : /^F\d{1,2}$/.test(e.code) ? e.code : keys[e.code];
+  if (!key) return "";
+  const mods = [e.ctrlKey && "Ctrl", e.altKey && "Alt", e.shiftKey && "Shift", e.metaKey && "Win"].filter(Boolean);
+  return mods.length ? [...mods, key].join("+") : "";
+}
+
+function dockSettings(s) {
+  const d = s.dock;
+  const sec = setSection("expand", "Dock", "The floating pill you can use from any app");
+
+  const where = el("select", "set-input set-select");
+  where.ariaLabel = "Dock position";
+  DOCK_POSITIONS.forEach(([value, label]) => {
+    const option = el("option", "", label);
+    option.value = value;
+    where.appendChild(option);
+  });
+  where.value = d.position;
+  where.onchange = async () => { const r = await setDock({ position: where.value }); if (r) toast("Dock moved"); };
+  sec.appendChild(setRow("expand", "Position", "Where on the screen the dock sits", false, where));
+
+  // Click, then press the new keys. Esc cancels.
+  const keys = setButton(d.shortcut, () => {
+    keys.textContent = "Press the new keys…";
+    keys.classList.add("listening");
+  });
+  keys.onkeydown = async (e) => {
+    if (!keys.classList.contains("listening")) return;
+    e.preventDefault();
+    e.stopPropagation();  // Esc here must not close Settings
+    if (e.key === "Escape") { keys.classList.remove("listening"); keys.textContent = d.shortcut; return; }
+    const text = shortcutText(e);
+    if (!text) return;  // a modifier on its own: wait for the key
+    keys.classList.remove("listening");
+    keys.textContent = text;
+    const r = await setDock({ shortcut: text });
+    if (r) { toast(`Dock shortcut: ${text}`); drawSettings(r); } else keys.textContent = d.shortcut;
+  };
+  keys.onblur = () => { if (keys.classList.contains("listening")) { keys.classList.remove("listening"); keys.textContent = d.shortcut; } };
+  const extra = [keys];
+  if (d.shortcut !== DEFAULT_SHORTCUT) {  // ` + Space can't be recorded (it is caught before the page sees it)
+    extra.unshift(setButton("Reset", async () => {
+      const r = await setDock({ shortcut: DEFAULT_SHORTCUT });
+      if (r) { toast("Dock shortcut: ` + Space"); drawSettings(r); }
+    }));
+  }
+  sec.appendChild(setRow("sparkles", "Shortcut", d.shortcut_ok ? "Opens the dock from any app. Click to change"
+                         : "Not working: another app has these keys. Click to pick others", d.shortcut_ok, ...extra));
+
+  const sw = el("button", "switch");
+  sw.type = "button";
+  sw.setAttribute("role", "switch");
+  sw.setAttribute("aria-checked", String(!!d.autohide));
+  sw.ariaLabel = "Autohide the dock";
+  sw.onclick = async () => {
+    const r = await setDock({ autohide: !d.autohide });
+    if (r) { d.autohide = r.dock.autohide; sw.setAttribute("aria-checked", String(d.autohide)); }
+  };
+  sec.appendChild(setRow("clock", "Autohide", "Only shows for the shortcut, hides 10 seconds after you stop using it", false, sw));
+  return sec;
 }
 
 function closeSettings() { $("setScrim").hidden = true; }

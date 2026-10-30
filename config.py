@@ -179,6 +179,13 @@ MAX_RECIPIENTS = 3
 # The WhatsApp agent only sends to names from this file that YOU typed in the request.
 CONTACTS_FILE = os.path.join(BASE_DIR, "contacts.json")
 
+# The dock (Settings > Dock): where it sits, the shortcut that opens it, and
+# autohide (only shown by the shortcut, hidden again 10 s after you stop using it)
+DOCK_POSITIONS = ("top-left", "top-mid", "top-right", "bottom-left", "bottom-mid", "bottom-right")
+DOCK_POSITION = os.getenv("DOCK_POSITION") if os.getenv("DOCK_POSITION") in DOCK_POSITIONS else "top-mid"
+DOCK_SHORTCUT = os.getenv("DOCK_SHORTCUT") or "`+Space"  # hold ` and press Space (hotkey.py)
+DOCK_AUTOHIDE = os.getenv("DOCK_AUTOHIDE") == "1"
+
 # ---------------------------------------------------------------
 # 4. Folders
 # ---------------------------------------------------------------

@@ -1,7 +1,10 @@
 """
-dock.py - The Aura dock: a small floating pill at the top-centre of the screen.
+dock.py - The Aura dock: a small floating pill at the top-centre of the screen
+(or another corner or edge: Settings > Dock).
 
 When the main window is minimised, the dock appears (like a "Dynamic Island").
+The dock's shortcut (hotkey.py) opens it from any app. With autohide on, it only
+appears for the shortcut and hides again AUTOHIDE seconds after you stop using it.
 Click it to expand, type a task, and the agents' results appear right in the dock.
 "Open Aura" brings the main window back (and the dock hides again).
 
@@ -35,6 +38,8 @@ import time
 import json
 
 import webview
+
+import config
 from PIL import Image, ImageEnhance, ImageFilter
 
 from nowplaying import NowPlaying
@@ -45,7 +50,8 @@ WIDTH, HEIGHT = 660, 640   # the window never changes size: only its visible sha
 PILL = (300, 44)           # pill size (width, height), including the 2px ring (see dock.css)
 CARD_RADIUS = 22           # corner radius of the shape (the page draws 20 + the 2px ring)
 ANIMATION = 0.45           # seconds; same as the grow/shrink animation in dock.css
-TOP_MARGIN = 8             # gap from the top of the screen
+MARGIN = 8                 # gap from the edges of the screen
+AUTOHIDE = 10              # seconds the shortcut's dock stays after you stop using it
 TITLE = "Aura Dock"
 GLASS_FAST = 1 / 15        # seconds between glass pictures while the background moves
 GLASS_SLOW = 0.5           # ... and while it is still (saves CPU, e.g. during a game)
@@ -172,6 +178,10 @@ class Dock:
         self._generation = 0                 # newest shape request (older timers are ignored)
         self._glass_run = 0                  # newest glass loop (an older one stops itself)
         self._last_glass = None
+        self.position = config.DOCK_POSITION  # "top-mid", "bottom-left"... (config.DOCK_POSITIONS)
+        self.autohide = config.DOCK_AUTOHIDE
+        self.main_minimized = False           # the main window is minimised (then the dock normally shows)
+        self._hide_run = 0                    # newest autohide timer (older ones are ignored)
         self.media = NowPlaying(self._on_media)  # what is playing (only watched while the dock shows)
         self.window = webview.create_window(
             TITLE, url=url, js_api=api,
@@ -194,8 +204,9 @@ class Dock:
 
     def _cut(self, width, height, radius):
         """
-        Cut the window down to a rounded box of this size (page pixels), centred
-        at the top. Everything outside it is invisible and lets clicks through.
+        Cut the window down to a rounded box of this size (page pixels), at the
+        window's edge or corner the dock sits in (dock.css puts the page there too).
+        Everything outside it is invisible and lets clicks through.
         """
         hwnd = self._hwnd()
         if not hwnd:
@@ -204,10 +215,14 @@ class Dock:
         rect = ctypes.wintypes.RECT()
         user32.GetWindowRect(hwnd, ctypes.byref(rect))
         scale = user32.GetDpiForWindow(hwnd) / 96  # real pixels per page pixel (display scaling)
-        left = round((rect.right - rect.left - width * scale) / 2)  # the page centres the dock
-        right, bottom = left + round(width * scale), round(height * scale)
+        free_x = rect.right - rect.left - round(width * scale)  # room beside / below the dock
+        free_y = rect.bottom - rect.top - round(height * scale)
+        vertical, side = self.position.split("-")
+        left = {"left": 0, "mid": free_x // 2, "right": free_x}[side]
+        top = free_y if vertical == "bottom" else 0
+        right, bottom = left + round(width * scale), top + round(height * scale)
         diameter = round(2 * radius * scale)
-        region = ctypes.windll.gdi32.CreateRoundRectRgn(left, 0, right + 1, bottom + 1, diameter, diameter)
+        region = ctypes.windll.gdi32.CreateRoundRectRgn(left, top, right + 1, bottom + 1, diameter, diameter)
         user32.SetWindowRgn(hwnd, region, True)  # Windows owns the region now
         self.shape = (width, height, radius)
 
@@ -232,7 +247,8 @@ class Dock:
         threading.Timer(ANIMATION + 0.05, settle).start()
 
     def _place(self):
-        """Centre the window at the top of its screen, using its REAL size (see WIDTH)."""
+        """Put the window in its corner / edge of the screen, using its REAL size (see WIDTH).
+        At the bottom it stays above the taskbar."""
         hwnd = self._hwnd()
         if not hwnd:
             return
@@ -245,9 +261,13 @@ class Dock:
                         ("rcWork", ctypes.wintypes.RECT), ("dwFlags", ctypes.wintypes.DWORD)]
         info = MONITORINFO(cbSize=ctypes.sizeof(MONITORINFO))
         user32.GetMonitorInfoW(user32.MonitorFromWindow(hwnd, 1), ctypes.byref(info))  # 1 = primary if none
-        screen = info.rcMonitor
-        x = screen.left + (screen.right - screen.left - (rect.right - rect.left)) // 2
-        y = screen.top + round(TOP_MARGIN * user32.GetDpiForWindow(hwnd) / 96)
+        screen, work = info.rcMonitor, info.rcWork
+        width, height = rect.right - rect.left, rect.bottom - rect.top
+        margin = round(MARGIN * user32.GetDpiForWindow(hwnd) / 96)
+        vertical, side = self.position.split("-")
+        x = {"left": work.left + margin, "mid": screen.left + (screen.right - screen.left - width) // 2,
+             "right": work.right - width - margin}[side]
+        y = work.bottom - height - margin if vertical == "bottom" else screen.top + margin
         user32.SetWindowPos(hwnd, 0, x, y, 0, 0, 0x0001 | 0x0004 | 0x0010)  # NOSIZE | NOZORDER | NOACTIVATE
 
     def _reshape(self):
@@ -280,11 +300,21 @@ class Dock:
                     wait = GLASS_SLOW  # e.g. the window closed meanwhile
 
     # ---------- Called by the main window's events ----------
-    def show(self):
+    def on_minimized(self):
+        self.main_minimized = True
+        if not self.autohide:
+            self.show()
+
+    def on_restored(self):
+        self.main_minimized = False
+        self.hide()
+
+    def show(self, wait=0.3):
         self.expanded = False
         self.visible = True
-        time.sleep(0.3)  # let the main window's minimise animation finish
+        time.sleep(wait)  # let the main window's minimise animation finish
         self._target = (*PILL, PILL[1] // 2)
+        self.window.evaluate_js(f"setDockPosition({json.dumps(self.position)})")
         self._place()
         self._style()
         self._cut(*self._target)
@@ -298,6 +328,7 @@ class Dock:
 
     def hide(self):
         self.visible = False
+        self.expanded = False
         self.media.stop()
         self.window.hide()
 
@@ -321,3 +352,45 @@ class Dock:
 
     def collapse(self):
         self.expanded = False
+        self._arm_autohide()
+
+    # ---------- The shortcut (hotkey.py) and settings ----------
+    def shortcut(self):
+        """The dock's shortcut was pressed: open the dock ready to type, or close it again."""
+        if not self.visible:
+            self.show(wait=0)
+            time.sleep(0.15)  # let the window appear before it grows
+        if self.expanded:
+            self.window.evaluate_js("collapseDock()")
+        else:
+            self.window.evaluate_js("expandDock()")
+            self._arm_autohide()
+
+    def _arm_autohide(self):
+        """Hide AUTOHIDE seconds from now, unless it is in use then. Only with autohide on,
+        or when the shortcut opened the dock while Aura's window is open."""
+        self._hide_run += 1
+        run = self._hide_run
+
+        def check():
+            if run != self._hide_run or not self.visible or (not self.autohide and self.main_minimized):
+                return
+            if self.expanded:
+                threading.Timer(AUTOHIDE, check).start()  # still typing / reading: look again later
+            else:
+                self.hide()
+        threading.Timer(AUTOHIDE, check).start()
+
+    def set_position(self, position):
+        self.position = position
+        if self.visible:
+            self.window.evaluate_js(f"setDockPosition({json.dumps(position)})")
+            self._place()
+            self._cut(*self._target)
+
+    def set_autohide(self, on):
+        self.autohide = on
+        if self.main_minimized and not on and not self.visible:
+            self.show(wait=0)
+        elif on and self.visible and not self.expanded:
+            self._arm_autohide()

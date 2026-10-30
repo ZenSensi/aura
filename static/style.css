@@ -1164,6 +1164,8 @@ button { font-family: inherit; cursor: pointer; }
 .set-status { white-space: normal; }
 .set-status.ok { color: var(--ok); }
 .auto-row .btn { flex-shrink: 0; }
+.auto-row .set-select { width: 150px; cursor: pointer; }
+.btn.listening { border-color: var(--accent); color: var(--accent); }  /* Settings > Dock: waiting for the new shortcut */
 .auto-row .btn:disabled { opacity: .6; cursor: default; }
 
 /* ================= Polish pass (2026-10-30) ================= */

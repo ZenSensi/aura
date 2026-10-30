@@ -108,6 +108,11 @@ async function fit() {
   document.body.style.setProperty("--open-h", h + "px");
 }
 $("pill").onclick = async () => { await api().dock_expand(); setDockMode("open"); };
+// Python: the dock's shortcut was pressed (dock.py shortcut)
+function expandDock() { if (!document.body.classList.contains("open")) $("pill").click(); }
+function collapseDock() { if (document.body.classList.contains("open")) $("dockClose").click(); }
+// Python: which corner / edge of the screen the dock is in, e.g. "bottom-left" (dock.css lines it up)
+function setDockPosition(pos) { document.documentElement.dataset.pos = pos; }
 $("dockClose").onclick = async () => { await api().dock_collapse(); setDockMode("pill"); };
 $("dockOpen").onclick = () => api().dock_open_main();
 setupVoice($("dockMic"), input);  // voice typing (voice.js)

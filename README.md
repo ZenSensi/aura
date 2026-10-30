@@ -210,7 +210,9 @@ the project folder, next to `.env`, `outputs\` and `logs\`.
 - **Sidebar** — New chat, **Automations** (see, run, pause or delete routines and reminders), **Recent tasks** (click
   to run again), **Agents** (click to pin one; the light switches it on/off), **Settings**, light/dark theme.
 - **Dock** — minimise Aura and a glass pill appears at the top of the screen. Click it to ask without opening the
-  window.
+  window. Hold `` ` `` (backtick) and press **Space** in any app to open or close it. In **Settings > Dock** you can move it to any
+  corner or the middle (top or bottom), pick your own shortcut, and turn on autohide (it shows only on the shortcut
+  and hides 10 s after you're done).
 - **Notifications** — a "task done" card slides in at the top-right when a request finishes.
 
 **Things to try**
@@ -265,6 +267,7 @@ expected agents in the expected order. Prints a pass/fail table and saves `logs/
 aura/
 ├── desktop.py            # Desktop app: native window (pywebview) + API the page calls
 ├── dock.py               # Floating glass dock shown while Aura is minimised
+├── hotkey.py             # The dock's keyboard shortcut (works in every app)
 ├── notify.py             # "Task done" notifications
 ├── orchestrator.py       # Plans steps (JSON) and runs them with shared state
 ├── llm.py                # One function for every OpenAI-compatible API + fallbacks + JSON parsing
