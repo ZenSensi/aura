@@ -36,15 +36,11 @@
       New chat
     </button>
     <button class="new-chat ghost auto-open" id="openAuto"><i data-icon="clock"></i> Automations <span class="auto-count" id="autoCount" hidden></span></button>
+    <button class="new-chat ghost auto-open" id="openAgents"><i data-icon="bot"></i> Agents <span class="side-count agents-count" id="agentTotal"></span></button>
 
     <div class="side-section">
       <div class="side-title">Recent tasks <span class="side-hint">click to run again</span></div>
       <div id="recentList" class="recent-list"></div>
-    </div>
-
-    <div class="side-section">
-      <div class="side-title">Agents <span class="side-count" id="agentTotal"></span></div>
-      <div id="agentList" class="agent-list"></div>
     </div>
 
     <div class="side-footer">
@@ -109,11 +105,11 @@
           <button class="example" data-fill="Write a leave letter for 2 days because I have a fever">Write a leave letter</button>
           <button class="example" data-fill="Find my resume pdf and open it">Find my resume</button>
           <button class="example" data-fill="What is 18% of 2450?">What is 18% of 2450?</button>
-          <button class="example" data-fill="Solve ">Solve</button>
+          <button class="example" data-fill="Solve 2x + 5 = 15">Solve 2x + 5 = 15</button>
           <button class="example" data-fill="Remind me in 20 minutes to drink water">Remind me in 20 min</button>
           <button class="example" data-fill="Every day at 8 AM give me today's tech news">Daily news at 8 AM</button>
           <button class="example" data-fill="Organise my Downloads folder">Tidy my Downloads</button>
-          <button class="example" data-fill="Play  on " data-caret="5">Play</button>
+          <button class="example" data-fill="Play  on " data-caret="5">Play a song</button>
         </div>
       </div>
       <div class="messages" id="messages"></div>
@@ -237,6 +233,21 @@
         <span id="startupLabel">Start Aura when Windows starts <em>(waits in the dock, so routines run on time)</em></span>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- Agents panel: click an agent to talk to it directly, click its light to switch it on/off (app.js loadInfo) -->
+<div class="modal-scrim" id="agentsScrim" hidden>
+  <div class="modal auto-panel agents-panel" role="dialog" aria-labelledby="agentsTitle">
+    <div class="modal-head">
+      <div class="modal-icon"><i data-icon="bot" data-size="20"></i></div>
+      <div>
+        <div class="modal-title" id="agentsTitle">Agents</div>
+        <div class="modal-sub">The Orchestrator picks agents for you. Click one to talk to it directly; click its light to switch it off.</div>
+      </div>
+      <button class="auto-x" id="agentsClose" title="Close" aria-label="Close"><i data-icon="x" data-size="16"></i></button>
+    </div>
+    <div class="auto-body"><div id="agentList" class="agent-list"></div></div>
   </div>
 </div>
 

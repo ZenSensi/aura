@@ -34,7 +34,7 @@ const AGENTS = {
 };
 
 document.getElementById("agentCount").textContent = Object.keys(AGENTS).length;  // header pill
-document.getElementById("agentTotal").textContent = "· " + Object.keys(AGENTS).length;  // sidebar heading
+document.getElementById("agentTotal").textContent = Object.keys(AGENTS).length;  // sidebar Agents button
 
 // The Python functions from desktop.py (class Api)
 const api = () => window.pywebview.api;
@@ -695,7 +695,7 @@ async function loadInfo() {
       icon.appendChild(window.icon(a.icon, 15));
       // Requests done + last used ("12 · 3h"), from the logs (loadUsage)
       const use = el("span", "agent-use");
-      // Status light on the right: red = on standby, green = working right now (setWorking), grey = off.
+      // Status light on the right: soft green = ready, bright green = working right now (setWorking), grey = off.
       // Clicking it switches the agent on/off (not the Orchestrator: it plans everything)
       const light = el("span", "agent-light");
       light.setAttribute("aria-label", "Standby");
@@ -707,7 +707,9 @@ async function loadInfo() {
         lamp.onclick = (e) => { e.stopPropagation(); switchAgent(key, agentsOff.has(key)); };
         lamp.onkeydown = (e) => e.stopPropagation();  // Enter on the light must not also pick the agent
       }
-      row.append(icon, el("span", "agent-name", a.name), use, lamp);
+      const text = el("span", "agent-text");
+      text.append(el("span", "agent-name", a.name), el("span", "agent-desc", a.desc));
+      row.append(icon, text, use, lamp);
       // Hover: what it does + which AI model (and backup) it uses
       const m = info.agents[key];
       row.title = `${a.name}: ${a.desc}
@@ -753,8 +755,16 @@ function setPinned(key) {
   pinned = key && key !== "orchestrator" && key !== pinned ? key : null;
   drawAgentStates();
   drawChips();
+  closeAgents();
   input.focus();
 }
+
+// Agents panel (sidebar "Agents" button)
+function closeAgents() { $("agentsScrim").hidden = true; }
+$("openAgents").onclick = () => { closeMenu(); $("agentsScrim").hidden = false; $("agentsClose").focus(); };
+$("agentsClose").onclick = closeAgents;
+$("agentsScrim").addEventListener("click", (e) => { if (e.target === $("agentsScrim")) closeAgents(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("agentsScrim").hidden) closeAgents(); });
 
 // Requests done + when last used, under each agent's name
 async function loadUsage() {
@@ -798,7 +808,7 @@ async function loadRecent() {
     list.appendChild(el("div", "recent-empty", "Your requests will show up here."));
     return;
   }
-  const STATUS = { ok: ["check", "var(--ok)", "Done"], failed: ["error", "var(--err)", "A step failed"],
+  const STATUS = { ok: ["check", "var(--ok)", "Done"], failed: ["error", "color-mix(in srgb, var(--err) 65%, var(--faint))", "A step failed"],
                    nothing: ["info", "var(--faint)", "Nothing to do"] };
   tasks.forEach((t) => {
     const [iconName, color, label] = STATUS[t.status];
