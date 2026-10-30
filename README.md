@@ -28,7 +28,6 @@ is done by Python, not by an AI model.
 - [Using Aura](#using-aura)
 - [Safety](#safety)
 - [Testing](#testing)
-- [Data analysis notebook](#data-analysis-notebook)
 - [Project structure](#project-structure)
 - [Troubleshooting](#troubleshooting)
 - [Acknowledgements](#acknowledgements)
@@ -260,24 +259,6 @@ python run_tests.py
 Runs the labelled requests in `run_tests.py` (33 at present) in **dry-run mode** (nothing is opened or sent) and checks that the Orchestrator chose the
 expected agents in the expected order. Prints a pass/fail table and saves `logs/test_results.csv`.
 
-## Data analysis notebook
-
-`data_analysis.ipynb` is the project's data-science analysis, with charts, in two parts:
-
-- **Part A — CLINC150**, a public benchmark of 23,700 labelled assistant requests (150 intents, 10 domains), saved in
-  `data/clinc150/`: structure, data quality, class balance, query length, vocabulary, and which requests Aura's agents
-  cover.
-- **Part B — Aura's own data**: agent usage, reliability, response time per agent and model, fallback use, errors,
-  usage over time, and routing accuracy on the labelled test set.
-
-```bash
-pip install pandas matplotlib jupyter
-jupyter notebook data_analysis.ipynb
-```
-
-The notebook is saved with its results. Part B re-runs only on a PC that has Aura's own log
-(`logs/run_log.jsonl`), which is kept out of the repository because it contains personal requests.
-
 ## Project structure
 
 ```
@@ -298,8 +279,6 @@ aura/
 ├── static/               # The UI: index.html, style.css, app.js, dock, notifications, vendor libs
 ├── assets/               # Logo and icons (make_logo.py draws them)
 ├── run_tests.py          # Labelled test requests (dry run)
-├── data_analysis.ipynb   # Data analysis notebook
-├── data/clinc150/        # CLINC150 public dataset (CC BY 3.0)
 ├── main.py               # Terminal version
 ├── build_exe.bat         # Builds Aura.exe with PyInstaller
 ├── .env.example          # Template for your API keys
@@ -329,6 +308,3 @@ Windows user, so the exe can be shared or installed anywhere), unless a `.env` s
   web search by [Tavily](https://tavily.com).
 - UI libraries: [pywebview](https://pywebview.flowrl.com), [marked](https://marked.js.org),
   [DOMPurify](https://github.com/cure53/DOMPurify), [KaTeX](https://katex.org).
-- **CLINC150** dataset: S. Larson et al., *An Evaluation Dataset for Intent Classification and Out-of-Scope
-  Prediction*, EMNLP-IJCNLP 2019 — [github.com/clinc/oos-eval](https://github.com/clinc/oos-eval), licensed
-  CC BY 3.0.
