@@ -1165,6 +1165,7 @@ button { font-family: inherit; cursor: pointer; }
 .set-status.ok { color: var(--ok); }
 .auto-row .btn { flex-shrink: 0; }
 .auto-row .set-select { width: 150px; cursor: pointer; }
+.set-select option { background: var(--bg); color: var(--text); }  /* the open list is a native popup: give it the theme's colours */
 .btn.listening { border-color: var(--accent); color: var(--accent); }  /* Settings > Dock: waiting for the new shortcut */
 .auto-row .btn:disabled { opacity: .6; cursor: default; }
 
