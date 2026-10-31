@@ -268,6 +268,7 @@ aura/
 ├── desktop.py            # Desktop app: native window (pywebview) + API the page calls
 ├── dock.py               # Floating glass dock shown while Aura is minimised
 ├── hotkey.py             # The dock's keyboard shortcut (works in every app)
+├── tray.py               # The system tray icon: open Aura, Settings, Dock settings, quit
 ├── notify.py             # "Task done" notifications
 ├── orchestrator.py       # Plans steps (JSON) and runs them with shared state
 ├── llm.py                # One function for every OpenAI-compatible API + fallbacks + JSON parsing

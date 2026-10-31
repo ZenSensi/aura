@@ -45,6 +45,7 @@ from agents.reader import FILE_TYPES as READABLE, kind_of as file_kind
 from dock import Dock, WIDTH as DOCK_WIDTH, HEIGHT as DOCK_HEIGHT
 from hotkey import Hotkey
 from notify import Notifier
+from tray import Tray
 
 MAX_REQUEST_CHARS = 1000
 STARTUP_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"  # this user's "start when I sign in" list
@@ -360,9 +361,15 @@ class Api:
         return self._dock.media.press(str(command))
 
     def dock_open_main(self):
-        """'Open Aura' in the dock: bring the main window back."""
+        """'Open Aura' in the dock or the tray: bring the main window back."""
         self._window.restore()
         self._window.show()
+        self._dock.on_restored()  # a hidden window (started with Windows) sends no "restored" event
+
+    def tray_settings(self, section=""):
+        """'Settings' / 'Dock settings' in the tray: open Aura at its Settings panel."""
+        self.dock_open_main()
+        self._window.evaluate_js(f"openSettings({json.dumps(section)})")
 
     # ---------- "Task done" notification (notify.py) ----------
     def notify_shape(self, height):
@@ -377,8 +384,7 @@ class Api:
 
     def notify_open(self):
         """The notification was clicked: bring Aura's window to the front."""
-        self._window.restore()
-        self._window.show()
+        self.dock_open_main()
 
     def notify_snooze(self, reminder_id):
         """'Snooze' on a reminder notification: show it again in SNOOZE_MINUTES."""
@@ -606,14 +612,14 @@ def main():
     # Read the list of installed apps in the background, so the window opens at once
     threading.Thread(target=installed_apps, daemon=True).start()
     api = Api()
-    minimized = "--minimized" in sys.argv  # started with Windows: wait in the dock
+    minimized = "--minimized" in sys.argv  # started with Windows: wait in the tray and the dock
     window = webview.create_window(
         "Aura",
         url=resource_path("static", "index.html"),
         js_api=api,
         width=1280, height=840, min_size=(420, 600),
         background_color="#0a0b10",
-        minimized=minimized,
+        hidden=minimized,  # hidden = no taskbar button until opened from the tray or the dock
     )
     api._window = window
     window.events.shown += lambda: style_title_bar(window, "dark")  # until the page sends its theme
@@ -632,9 +638,12 @@ def main():
     notifier = Notifier(resource_path("static", "notify.html"), api)
     api._notifier = notifier
 
+    tray = Tray(resource_path("assets", "icon.ico"), api.dock_open_main, api.tray_settings, window.destroy)
+
     def close_helpers():  # closing Aura closes the dock and the notification too
         dock.media.stop()  # and the Now Playing watcher
         api._hotkey.stop()
+        tray.stop()
         dock.window.destroy()
         notifier.window.destroy()
     window.events.closed += close_helpers

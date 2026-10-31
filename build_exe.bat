@@ -5,7 +5,7 @@ REM because the app reads its API keys and saves its files there.
 REM
 REM   --windowed   no black console window
 REM   --onefile    everything packed into one .exe
-REM   --add-data   bundle the UI files (static\) inside the .exe
+REM   --add-data   bundle the UI files (static\) and the tray icon inside the .exe
 REM   --exclude-module  big libraries Aura never uses. PyMuPDF (PDF reading) can
 REM                load an optional AI layout add-on, which pulls in torch, scipy,
 REM                pandas... and makes the build huge and slow. Aura only needs
@@ -16,6 +16,8 @@ python -m PyInstaller --noconfirm --clean --windowed --onefile ^
   --icon assets\icon.ico ^
   --version-file version_info.txt ^
   --add-data "static;static" ^
+  --add-data "assets\icon.ico;assets" ^
+  --hidden-import pystray._win32 ^
   --exclude-module pymupdf.layout --exclude-module pymupdf4llm --exclude-module pymupdf_layout ^
   --exclude-module onnxruntime --exclude-module torch --exclude-module tensorflow --exclude-module transformers ^
   --exclude-module scipy --exclude-module sklearn --exclude-module numba --exclude-module llvmlite ^

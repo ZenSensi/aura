@@ -1472,7 +1472,7 @@ function drawSettings(s) {
       sw.setAttribute("aria-checked", String(s.startup));
       $("startupBox").setAttribute("aria-checked", String(s.startup));  // the same switch in Automations
     };
-    aura.appendChild(setRow("clock", "Start with Windows", "Waits in the dock, so routines run on time", false, sw));
+    aura.appendChild(setRow("clock", "Start with Windows", "Waits in the tray and the dock, so routines run on time", false, sw));
   }
   aura.appendChild(setRow("folder", "Outputs folder", "Letters, emails and files Aura makes", false,
     setButton("Open", () => api().open_outputs_folder())));
@@ -1509,6 +1509,7 @@ function shortcutText(e) {
 function dockSettings(s) {
   const d = s.dock;
   const sec = setSection("expand", "Dock", "The floating pill you can use from any app");
+  sec.id = "setDock";  // the tray's "Dock settings" scrolls here
 
   const where = el("select", "set-input set-select");
   where.ariaLabel = "Dock position";
@@ -1564,13 +1565,14 @@ function dockSettings(s) {
 
 function closeSettings() { $("setScrim").hidden = true; }
 
-async function openSettings() {
+async function openSettings(section) {  // section "dock" (from the tray) opens at Dock
   if (busy) return toast("Wait for the agents to finish");
   closeMenu();
   $("setError").textContent = "";
   drawSettings(await api().get_settings());
   $("setScrim").hidden = false;
   $("setBody").scrollTop = 0;  // start at Email
+  if (section === "dock") $("setDock").scrollIntoView({ block: "start" });
   $("setClose").focus();
 }
 
