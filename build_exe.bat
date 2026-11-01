@@ -11,12 +11,21 @@ REM                load an optional AI layout add-on, which pulls in torch, scip
 REM                pandas... and makes the build huge and slow. Aura only needs
 REM                plain PDF text, so these are left out.
 
+REM Aura's Google client (phone reminders, notch calendar) goes inside the exe so
+REM users don't need their own Google project. It is gitignored: the build stops
+REM if it is missing, so a release never ships without it.
+if not exist google_client.json (
+  echo google_client.json is missing next to build_exe.bat - download it from Google Cloud Console ^(Clients^).
+  exit /b 1
+)
+
 python -m PyInstaller --noconfirm --clean --windowed --onefile ^
   --name "Aura" ^
   --icon assets\icon.ico ^
   --version-file version_info.txt ^
   --add-data "static;static" ^
   --add-data "assets\icon.ico;assets" ^
+  --add-data "google_client.json;." ^
   --hidden-import pystray._win32 ^
   --exclude-module pymupdf.layout --exclude-module pymupdf4llm --exclude-module pymupdf_layout ^
   --exclude-module onnxruntime --exclude-module torch --exclude-module tensorflow --exclude-module transformers ^

@@ -43,11 +43,13 @@ import config
 from PIL import Image, ImageEnhance, ImageFilter
 
 from nowplaying import NowPlaying
+from notch import Clipboard, Devices, Hud
 
 WIDTH, HEIGHT = 660, 640   # the window never changes size: only its visible shape does.
                            # (pywebview makes a frameless window ~16 x 39 px smaller than
                            # asked; the page measures its real size, so a little spare is fine)
 PILL = (300, 44)           # pill size (width, height), including the 2px ring (see dock.css)
+NOTCH = (364, 50)          # the notch is a little bigger (dock.css / dock.js)
 CARD_RADIUS = 22           # corner radius of the shape (the page draws 20 + the 2px ring)
 ANIMATION = 0.45           # seconds; same as the grow/shrink animation in dock.css
 MARGIN = 8                 # gap from the edges of the screen
@@ -180,15 +182,26 @@ class Dock:
         self._last_glass = None
         self.position = config.DOCK_POSITION  # "top-mid", "bottom-left"... (config.DOCK_POSITIONS)
         self.autohide = config.DOCK_AUTOHIDE
+        self.style = config.DOCK_STYLE        # "dock" (glass pill) or "notch" (black, stuck to the top edge)
         self.main_minimized = False           # the main window is minimised (then the dock normally shows)
         self._hide_run = 0                    # newest autohide timer (older ones are ignored)
         self.media = NowPlaying(self._on_media)  # what is playing (only watched while the dock shows)
+        self.timer = None                     # notch focus timer: {"end": epoch ms, "total": ms} or None
+        self._timer_run = 0
+        self._flash_run = 0
+        self._flash_opened = False            # a HUD / banner showed the notch, so it hides it again
+        # Notch-only watchers, started once the page is ready (see _watch)
+        self.hud = Hud(self._on_hud)          # volume / brightness bars
+        self.devices = Devices(self._on_device)  # charger, Bluetooth
+        self.clipboard = Clipboard(self._on_copy)  # the clipboard shelf
         self.window = webview.create_window(
             TITLE, url=url, js_api=api,
             width=WIDTH, height=HEIGHT, min_size=(100, 30),
             frameless=True, on_top=True, resizable=False, hidden=True,
+            easy_drag=False,  # it stays where Settings > Dock puts it: no dragging it around
             shadow=False, background_color="#0b0c18",
         )
+        self.window.events.loaded += self._watch
 
     # ---------- Windows helpers ----------
     def _hwnd(self):
@@ -197,6 +210,14 @@ class Dock:
         if sys.platform != "win32" or native is None:
             return 0
         return int(native.Handle.ToInt64())
+
+    def _pill(self):
+        """The collapsed shape (width, height, corner radius) for this style."""
+        return (*NOTCH, CARD_RADIUS) if self.style == "notch" else (*PILL, PILL[1] // 2)
+
+    def _pos(self):
+        """Where it sits: the notch is always at the top middle."""
+        return "top-mid" if self.style == "notch" else self.position
 
     def _style(self):
         """Once per show (see float_style)."""
@@ -217,12 +238,14 @@ class Dock:
         scale = user32.GetDpiForWindow(hwnd) / 96  # real pixels per page pixel (display scaling)
         free_x = rect.right - rect.left - round(width * scale)  # room beside / below the dock
         free_y = rect.bottom - rect.top - round(height * scale)
-        vertical, side = self.position.split("-")
+        vertical, side = self._pos().split("-")
         left = {"left": 0, "mid": free_x // 2, "right": free_x}[side]
         top = free_y if vertical == "bottom" else 0
         right, bottom = left + round(width * scale), top + round(height * scale)
         diameter = round(2 * radius * scale)
-        region = ctypes.windll.gdi32.CreateRoundRectRgn(left, top, right + 1, bottom + 1, diameter, diameter)
+        # Notch: start the rounded box above the window, so its top corners fall outside (square)
+        region = ctypes.windll.gdi32.CreateRoundRectRgn(left, top - (diameter if self.style == "notch" else 0),
+                                                        right + 1, bottom + 1, diameter, diameter)
         user32.SetWindowRgn(hwnd, region, True)  # Windows owns the region now
         self.shape = (width, height, radius)
 
@@ -264,7 +287,9 @@ class Dock:
         screen, work = info.rcMonitor, info.rcWork
         width, height = rect.right - rect.left, rect.bottom - rect.top
         margin = round(MARGIN * user32.GetDpiForWindow(hwnd) / 96)
-        vertical, side = self.position.split("-")
+        vertical, side = self._pos().split("-")
+        if self.style == "notch":
+            margin = 0  # stuck to the top edge of the screen
         x = {"left": work.left + margin, "mid": screen.left + (screen.right - screen.left - width) // 2,
              "right": work.right - width - margin}[side]
         y = work.bottom - height - margin if vertical == "bottom" else screen.top + margin
@@ -313,8 +338,8 @@ class Dock:
         self.expanded = False
         self.visible = True
         time.sleep(wait)  # let the main window's minimise animation finish
-        self._target = (*PILL, PILL[1] // 2)
-        self.window.evaluate_js(f"setDockPosition({json.dumps(self.position)})")
+        self._target = self._pill()
+        self._send_look()
         self._place()
         self._style()
         self._cut(*self._target)
@@ -381,12 +406,108 @@ class Dock:
                 self.hide()
         threading.Timer(AUTOHIDE, check).start()
 
+    def _send_look(self):
+        """Tell the page where the dock sits and whether it is a notch (dock.css lines it up)."""
+        self.window.evaluate_js(f"setDockPosition({json.dumps(self._pos())}, {json.dumps(self.style)})")
+
     def set_position(self, position):
         self.position = position
+        self._relook()
+
+    def set_style(self, style):
+        self.style = style
+        self._watch()
+        self._relook()
+
+    def _watch(self):
+        """The notch's watchers run only in notch style."""
+        for watcher in (self.hud, self.devices, self.clipboard):
+            watcher.start() if self.style == "notch" else watcher.stop()
+
+    def stop_watchers(self):
+        for watcher in (self.hud, self.devices, self.clipboard):
+            watcher.stop()
+
+    # ---------- Notch: focus timer and volume / brightness HUD ----------
+    def set_timer(self, seconds):
+        """Start a focus timer (seconds > 0) or stop it (0). It chimes and shows the notch when done."""
+        self._timer_run += 1
+        run = self._timer_run
+        if seconds <= 0:
+            self.timer = None
+        else:
+            self.timer = {"end": int(time.time() * 1000 + seconds * 1000), "total": int(seconds * 1000)}
+
+            def done():
+                if run != self._timer_run:
+                    return  # stopped or restarted meanwhile
+                self.timer = None
+                from notify import play_chime  # here: notify.py imports this file
+                play_chime("remind")
+                self.window.evaluate_js("setTimer(null)")
+                self.banner("remind", "Time's up", "Your focus timer has finished", seconds=6)
+            threading.Timer(seconds, done).start()
+        self.window.evaluate_js(f"setTimer({json.dumps(self.timer)})")
+        return self.timer
+
+    def _flash(self, script, seconds, end_script):
+        """Show something in the closed notch for a moment (a HUD bar, a banner).
+        If the notch was hidden it shows just for that and hides again afterwards.
+        Nothing is shown while the notch is open (you are using it)."""
+        if self.style != "notch" or self.expanded:
+            return
+        self._flash_run += 1
+        run = self._flash_run
+        if not self.visible:
+            self._flash_opened = True
+            self.show(wait=0)
+        self.window.evaluate_js(script)
+
+        def end():
+            if run != self._flash_run:
+                return  # a newer one is showing
+            try:
+                self.window.evaluate_js(end_script)
+                if self._flash_opened and not self.expanded:
+                    self._flash_opened = False
+                    if not (self.main_minimized and not self.autohide):  # it normally isn't on screen now
+                        time.sleep(0.5)  # let the banner shrink back first
+                        self.hide()
+            except Exception:
+                pass  # Aura was closed meanwhile
+        threading.Timer(seconds, end).start()
+
+    def _on_hud(self, kind, percent, muted):
+        """Volume or brightness changed (notch.Hud): the bar shows for a moment."""
+        self._flash(f"setHud({json.dumps(kind)}, {int(percent)}, {json.dumps(bool(muted))})", 1.8, "setHud(null)")
+
+    def banner(self, kind, title, text="", seconds=4.5, snooze=None):
+        """A notification in the notch (like the iPhone's Dynamic Island): kind picks the
+        icon and colour (ok, error, warn, info, remind, charger, bluetooth, clip, ai).
+        snooze: a reminder's id, for its Snooze button."""
+        info = {"kind": kind, "title": str(title)[:90], "text": str(text)[:140], "snooze": snooze}
+        self._flash(f"showBanner({json.dumps(info)})", seconds, "showBanner(null)")
+
+    def _on_device(self, kind, info):
+        if kind == "charger":
+            self.banner("charger", "Charging" if info["charging"] else "Charger unplugged", f"Battery {info['percent']}%")
+        elif kind == "bluetooth":
+            battery = f"Battery {info['battery']}%" if info.get("battery") is not None else "Bluetooth"
+            self.banner("bluetooth", f"{info['name']} connected", battery)
+
+    def _on_copy(self, text, count_today):
+        preview = " ".join(text.split())[:70]
+        self.banner("clip", "Copied to the shelf", f"{preview} · {count_today} today", seconds=2.5)
+        self.window.evaluate_js(f"setShelf({json.dumps(self.clipboard.items)})")
+
+    def _relook(self):
         if self.visible:
-            self.window.evaluate_js(f"setDockPosition({json.dumps(position)})")
+            self._send_look()
             self._place()
-            self._cut(*self._target)
+            if self.expanded:
+                self._cut(*self._target)
+            else:
+                self.set_shape(*self._pill())  # notch and pill differ in size: page animates, cut follows
 
     def set_autohide(self, on):
         self.autohide = on

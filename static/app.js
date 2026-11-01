@@ -1356,11 +1356,13 @@ $("startupBox").onclick = async (e) => {
    Python never sends keys or passwords here, only whether each one is saved.
    An empty key box keeps the saved key. */
 
-const SET_KEYS = [  // [.env name, label, what it's for, icon]
+const AI_KEYS = [  // [.env name, label, what it's for, icon]: shown under AI engine > API only
   ["GROQ_API_KEY", "Groq", "Main AI model for most agents", "zap"],
   ["GROQ_API_KEY_SYSTEM", "Groq (second key)", "Planner, System, Files, Inbox: their own rate limit", "zap"],
   ["GEMINI_API_KEY", "Gemini", "Backup model when Groq is busy", "zap"],
   ["OPENROUTER_API_KEY", "OpenRouter", "Last backup, and the Reader's picture model", "zap"],
+];
+const SET_KEYS = [  // the other connections, whatever the AI engine
   ["TAVILY_API_KEY", "Tavily", "Web search", "globe"],
   ["NOTION_TOKEN", "Notion", "Integration secret from notion.so/profile/integrations", "file"],
 ];
@@ -1424,12 +1426,11 @@ function drawSettings(s) {
   mail.append(pair, setField("Your name (signs emails, greets you)", setInput("USER_NAME", "text", s.name, "Your full name")));
   body.appendChild(mail);
 
+  body.appendChild(aiSettings(s));
+
   // Connections
   const conn = setSection("lock", "Connections", "Paste a new key to replace the saved one");
-  SET_KEYS.forEach(([key, label, what, iconName]) => {
-    conn.appendChild(setRow(iconName, label, saved(key) ? "Connected · " + what : "Not set · " + what, saved(key),
-      setInput(key, "password", "", saved(key) ? "••••••••" : "Paste key")));
-  });
+  SET_KEYS.forEach((k) => conn.appendChild(keyRow(s, ...k)));
   const google = setButton(s.google === "connected" ? "Disconnect" : "Connect", async () => {
     $("setError").textContent = "";
     if (s.google === "connected") return drawSettings(await api().google_disconnect());
@@ -1480,6 +1481,53 @@ function drawSettings(s) {
   body.appendChild(dockSettings(s));
 }
 
+/* Settings > AI engine: API keys, or coding-agent CLIs on this PC (api.set_ai, applies at once). */
+function setSelect(label, options, value, onChange) {  // options: [[value, text], ...]
+  const select = el("select", "set-input set-select");
+  select.ariaLabel = label;
+  options.forEach(([v, text]) => { const o = el("option", "", text); o.value = v; select.appendChild(o); });
+  select.value = value;
+  select.onchange = () => onChange(select.value);
+  return select;
+}
+
+async function setAi(values) {
+  $("setError").textContent = "";
+  const r = await api().set_ai(values);
+  if (r.error) { $("setError").textContent = r.error; return; }
+  drawSettings(r);
+  loadInfo();  // the sidebar shows which model or CLI each agent uses
+}
+
+function keyRow(s, key, label, what, iconName) {  // one API key: status + a box to paste a new one
+  const ok = s.set[key];
+  return setRow(iconName, label, (ok ? "Connected · " : "Not set · ") + what, ok,
+    setInput(key, "password", "", ok ? "••••••••" : "Paste key"));
+}
+
+function aiSettings(s) {
+  const ai = s.ai;
+  const cli = ai.mode === "cli";
+  const sec = setSection("sparkles", "AI engine", cli ? "If an agent hits its limit, Aura switches to your API keys"
+                                                       : "If the keys hit their limit, Aura switches to the agents");
+  const tools = Object.entries(ai.tools).map(([k, t]) => [k, t.name + (t.installed ? "" : " (not installed)")]);
+  sec.appendChild(setRow("zap", "Run Aura on", cli ? "Claude Code, Codex, Antigravity or OpenCode, signed in with your account"
+                                                   : "Groq, Gemini and OpenRouter keys", true,
+    setSelect("AI engine", [["api", "API only"], ["cli", "Agents only"]], ai.mode, (v) => setAi({ mode: v }))));
+  if (!cli) {
+    AI_KEYS.forEach((k) => sec.appendChild(keyRow(s, ...k)));
+    return sec;
+  }
+  sec.appendChild(setRow("sparkles", "Planner (orchestrator)", "Plans every request, and the default for the agents", false,
+    setSelect("Planner CLI", tools, ai.orchestrator, (v) => setAi({ orchestrator: v }))));
+  const same = [["", "Same as planner"], ...tools];
+  Object.keys(ai.agents).forEach((agent) => {
+    sec.appendChild(setRow("chat", agent[0].toUpperCase() + agent.slice(1), "", false,
+      setSelect(agent + " CLI", same, ai.agents[agent], (v) => setAi({ [agent]: v }))));
+  });
+  return sec;
+}
+
 /* Settings > Dock: position, shortcut and autohide. Each one applies at once (api.set_dock). */
 const DOCK_POSITIONS = [["top-left", "Top left"], ["top-mid", "Top middle"], ["top-right", "Top right"],
                         ["bottom-left", "Bottom left"], ["bottom-mid", "Bottom middle"], ["bottom-right", "Bottom right"]];
@@ -1511,6 +1559,20 @@ function dockSettings(s) {
   const sec = setSection("expand", "Dock", "The floating pill you can use from any app");
   sec.id = "setDock";  // the tray's "Dock settings" scrolls here
 
+  const look = el("select", "set-input set-select");
+  look.ariaLabel = "Dock style";
+  [["dock", "Dock"], ["notch", "Notch"]].forEach(([value, label]) => {
+    const option = el("option", "", label);
+    option.value = value;
+    look.appendChild(option);
+  });
+  look.value = d.style;
+  look.onchange = async () => {
+    const r = await setDock({ style: look.value });
+    if (r) { toast(look.value === "notch" ? "Now a notch" : "Now a dock"); drawSettings(r); }
+  };
+  sec.appendChild(setRow("sparkles", "Style", "Dock: a glass pill. Notch: black, stuck to the top of the screen", false, look));
+
   const where = el("select", "set-input set-select");
   where.ariaLabel = "Dock position";
   DOCK_POSITIONS.forEach(([value, label]) => {
@@ -1519,8 +1581,10 @@ function dockSettings(s) {
     where.appendChild(option);
   });
   where.value = d.position;
+  where.disabled = d.style === "notch";
   where.onchange = async () => { const r = await setDock({ position: where.value }); if (r) toast("Dock moved"); };
-  sec.appendChild(setRow("expand", "Position", "Where on the screen the dock sits", false, where));
+  sec.appendChild(setRow("expand", "Position", where.disabled ? "The notch always sits at the top middle"
+                         : "Where on the screen the dock sits", false, where));
 
   // Click, then press the new keys. Esc cancels.
   const keys = setButton(d.shortcut, () => {
@@ -1606,7 +1670,7 @@ window.addEventListener("pywebviewready", () => {
   loadAutomations();
   // First run on a new PC: no AI key yet, so nothing can work -> open Settings
   api().get_settings().then((s) => {
-    if (!s.set.GROQ_API_KEY && !s.set.GEMINI_API_KEY) { openSettings(); toast("Add a free Groq or Gemini key to start"); }
+    if (s.ai.mode !== "cli" && !s.set.GROQ_API_KEY && !s.set.GEMINI_API_KEY) { openSettings(); toast("Add a free Groq or Gemini key to start"); }
   });
 });
 input.focus();

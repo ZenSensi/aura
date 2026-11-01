@@ -10,27 +10,33 @@ google_sync.py - Puts reminders on the user's phone through Google Tasks and Goo
 Why both: Google's Tasks API keeps only the DATE of a task and drops the time,
 so a task alone can't ring at 6 PM. The Calendar event does that.
 
-ONE-TIME SETUP (free):
+SETUP: none for users of Aura.exe. The exe carries Aura's own Google client
+(google_client.json, added by build_exe.bat; never in the repository), so
+"Connect Google" just opens Google's sign-in page. The permission is then kept
+in google_token.json (only on this PC).
+To use your own Google project instead (or when running from source):
   1. https://console.cloud.google.com -> new project -> enable "Google Tasks API"
      and "Google Calendar API".
-  2. "OAuth consent screen": External, add your Gmail as a test user, then
-     "Publish app" (in Testing mode Google signs you out every 7 days).
-  3. "Credentials" -> Create credentials -> OAuth client ID -> "Desktop app"
-     -> download the JSON and save it next to Aura as google_client.json.
-  The first phone reminder opens Google's sign-in page in the browser.
-  After that, the permission is kept in google_token.json (only on this PC).
+  2. Google Auth Platform: External, then "Publish app"
+     (in Testing mode Google signs you out every 7 days).
+  3. Clients -> Create client -> "Desktop app" -> download the JSON and save it
+     as google_client.json in Aura's data folder (it wins over the built-in one).
 
 SAFETY: Aura asks only for Tasks and Calendar events, nothing else in the
-account (no Gmail, no Drive). It only ever ADDS a task or an event.
+account (no Gmail, no Drive). It adds tasks and events you ask for, and reads
+upcoming events only to show them in the notch.
 """
 
 import os
+import sys
 import threading
 from datetime import datetime, timedelta
 
 import config
 
-CLIENT_FILE = os.path.join(config.BASE_DIR, "google_client.json")
+_OWN_CLIENT = os.path.join(config.BASE_DIR, "google_client.json")       # the user's own project, if any
+_BUILT_IN_CLIENT = os.path.join(getattr(sys, "_MEIPASS", ""), "google_client.json")  # inside Aura.exe
+CLIENT_FILE = _OWN_CLIENT if os.path.isfile(_OWN_CLIENT) or not getattr(sys, "_MEIPASS", None) else _BUILT_IN_CLIENT
 TOKEN_FILE = os.path.join(config.BASE_DIR, "google_token.json")
 SCOPES = ["https://www.googleapis.com/auth/tasks",
           "https://www.googleapis.com/auth/calendar.events"]
@@ -51,8 +57,9 @@ def ready():
     return os.path.isfile(CLIENT_FILE)
 
 
-def _credentials():
-    """Saved sign-in, refreshed if old; or a new sign-in in the browser the first time."""
+def _credentials(interactive=True):
+    """Saved sign-in, refreshed if old; or a new sign-in in the browser the first time.
+    interactive=False (the notch's calendar, in the background): never open the browser."""
     # Imported here so Aura still starts if these libraries are missing
     from google.auth.exceptions import RefreshError
     from google.auth.transport.requests import Request
@@ -76,6 +83,8 @@ def _credentials():
                 creds.refresh(Request())
             except RefreshError:
                 creds = None  # the user removed Aura's access, or it expired: sign in again
+        if (not creds or not creds.valid) and not interactive:
+            raise GoogleError("Not signed in to Google.")
         if not creds or not creds.valid:
             flow = InstalledAppFlow.from_client_secrets_file(CLIENT_FILE, SCOPES)
             try:
@@ -104,6 +113,26 @@ def _post(session, url, body):
             detail = reply.text[:200]
         raise GoogleError(f"Google said no ({reply.status_code}): {detail}")
     return reply.json()
+
+
+def upcoming_events(start, end):
+    """Calendar events between two aware datetimes, for the notch: [{"title", "start", "all_day"}].
+    Only with a saved sign-in (never opens the browser)."""
+    from google.auth.transport.requests import AuthorizedSession
+    session = AuthorizedSession(_credentials(interactive=False))
+    params = {"timeMin": start.isoformat(), "timeMax": end.isoformat(), "singleEvents": "true",
+              "orderBy": "startTime", "maxResults": 100}
+    try:
+        reply = session.get(EVENTS_URL, params=params, timeout=config.API_TIMEOUT_SECONDS)
+        reply.raise_for_status()
+    except Exception as e:
+        raise GoogleError(f"Couldn't read the calendar ({e}).")
+    events = []
+    for item in reply.json().get("items", []):
+        when = item.get("start", {})
+        events.append({"title": item.get("summary") or "(no title)",
+                       "start": when.get("dateTime") or when.get("date", ""), "all_day": "date" in when})
+    return events
 
 
 def task_body(title, moment=None):

@@ -135,6 +135,38 @@ AGENT_MODELS = {
     },
 }
 
+# ---------------------------------------------------------------
+# 2b. AI engine: "api" (API keys above) or "cli" (coding-agent CLIs on this PC)
+# Settings > AI engine. The chosen engine goes first; if it fails or hits its
+# limit, the same call (same messages, so no context is lost) goes to the
+# other one: API models -> the agent's CLI, or CLI -> API models with a saved key.
+# The prompt goes in on stdin (Windows mangles long arguments to .cmd files),
+# except Antigravity's agy, which only takes it as an argument.
+# Pictures are saved as files next to it for the CLI to look at ("image_flag": attached instead).
+# Each runs in an empty folder, read-only, so it can only answer, not act:
+# Aura's own agents still do every action.
+# ---------------------------------------------------------------
+AI_MODES = ("api", "cli")
+AI_MODE = os.getenv("AI_MODE") if os.getenv("AI_MODE") in AI_MODES else "api"
+CLI_TOOLS = {
+    "claude":      {"name": "Claude Code", "command": ["claude", "-p"], "stdin": True},
+    "codex":       {"name": "Codex", "command": ["codex", "exec", "--skip-git-repo-check", "--ephemeral",
+                                                 "-s", "read-only", "--color", "never", "-"], "stdin": True,
+                    "image_flag": "--image="},
+    "antigravity": {"name": "Antigravity", "command": ["agy", "-p"], "stdin": False},
+    "opencode":    {"name": "OpenCode", "command": ["opencode", "run"], "stdin": True},
+}
+CLI_TIMEOUT_SECONDS = 180  # CLIs start up and think longer than one API call
+ORCHESTRATOR_CLI = os.getenv("ORCHESTRATOR_CLI") if os.getenv("ORCHESTRATOR_CLI") in CLI_TOOLS else "claude"
+
+
+def agent_cli(agent):
+    """The CLI an agent uses: its own AGENT_CLI_<NAME>, else the planner's. Pictures (vision) use the Reader's."""
+    if agent == "vision":
+        agent = "reader"
+    own = os.getenv("AGENT_CLI_" + agent.upper())
+    return own if own in CLI_TOOLS else ORCHESTRATOR_CLI
+
 # Web search (Web agent): Tavily's search API, made for AI agents.
 # Free key (1,000 searches a month, no card) at https://tavily.com -> TAVILY_API_KEY in .env
 TAVILY_API_KEY = (os.getenv("TAVILY_API_KEY") or "").strip()
@@ -185,6 +217,8 @@ DOCK_POSITIONS = ("top-left", "top-mid", "top-right", "bottom-left", "bottom-mid
 DOCK_POSITION = os.getenv("DOCK_POSITION") if os.getenv("DOCK_POSITION") in DOCK_POSITIONS else "top-mid"
 DOCK_SHORTCUT = os.getenv("DOCK_SHORTCUT") or "`+Space"  # hold ` and press Space (hotkey.py)
 DOCK_AUTOHIDE = os.getenv("DOCK_AUTOHIDE") == "1"
+# "notch": a black notch stuck to the top edge of the screen (always top middle) instead of the glass pill
+DOCK_STYLE = "notch" if os.getenv("DOCK_STYLE") == "notch" else "dock"
 
 # ---------------------------------------------------------------
 # 4. Folders

@@ -93,6 +93,7 @@ class Notifier:
             TITLE, url=url, js_api=api,
             width=WIDTH, height=HEIGHT,
             frameless=True, on_top=True, resizable=False, hidden=True, focus=False,
+            easy_drag=False,  # stays in its corner
             shadow=False, background_color="#0b0c18",
         )
         self.window.events.loaded += self._ready.set

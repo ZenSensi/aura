@@ -72,22 +72,26 @@ let openHeight = MIN_H;
 // Height the open card needs for its content (limited to the window)
 function contentHeight() {
   const card = $("nowCard").offsetHeight ? $("nowCard").offsetHeight + 12 : 0;  // + its bottom margin
-  const h = $("dockForm").offsetHeight + card + (results.childElementCount ? results.scrollHeight : 0);
+  const h = $("dockForm").offsetHeight + card + $("home").offsetHeight
+          + (results.childElementCount ? results.scrollHeight : 0);
   return Math.max(MIN_H, Math.min(MAX_H, Math.ceil(h)));
 }
 // Sizes are the body's; Python's cut-out also includes the ring around it
 const shapeTo = (w, h) => api().dock_shape(w + 2 * RING, h + 2 * RING, RADIUS + RING);
+// The notch is a little bigger than the pill (dock.css, NOTCH in dock.py)
+const pillSize = () => document.documentElement.dataset.style === "notch" ? [360, 46] : [PILL_W, PILL_H];
 
 // instant=true (Python, when the dock appears): no animation
 async function setDockMode(mode, instant = false) {
   const body = document.body;
   body.classList.toggle("instant", instant);
   if (mode === "open") {
+    if (document.documentElement.dataset.style === "notch") refreshHome();
     openHeight = contentHeight();
     body.style.setProperty("--open-h", openHeight + "px");
     await shapeTo(CARD_W, openHeight);
   } else {
-    shapeTo(PILL_W, PILL_H);  // Python waits for the shrink animation before cutting
+    shapeTo(...pillSize());  // Python waits for the shrink animation before cutting
   }
   body.classList.toggle("pill", mode === "pill");
   body.classList.toggle("open", mode === "open");
@@ -111,8 +115,12 @@ $("pill").onclick = async () => { await api().dock_expand(); setDockMode("open")
 // Python: the dock's shortcut was pressed (dock.py shortcut)
 function expandDock() { if (!document.body.classList.contains("open")) $("pill").click(); }
 function collapseDock() { if (document.body.classList.contains("open")) $("dockClose").click(); }
-// Python: which corner / edge of the screen the dock is in, e.g. "bottom-left" (dock.css lines it up)
-function setDockPosition(pos) { document.documentElement.dataset.pos = pos; }
+// Python: which corner / edge of the screen the dock is in, e.g. "bottom-left", and its style
+// ("dock" or "notch"); dock.css lines it up
+function setDockPosition(pos, style = "dock") {
+  document.documentElement.dataset.pos = pos;
+  document.documentElement.dataset.style = style;
+}
 $("dockClose").onclick = async () => { await api().dock_collapse(); setDockMode("pill"); };
 $("dockOpen").onclick = () => api().dock_open_main();
 setupVoice($("dockMic"), input);  // voice typing (voice.js)
@@ -250,6 +258,8 @@ function onDockEvent(ev) {
       break;
     case "step_start":
       current.rows[ev.number] = makeRow(ev.agent, ev.task);
+      // Live activity: the closed pill / notch says which agent is working on what
+      $("pillText").textContent = `${(AGENTS[ev.agent] || AGENTS.system).name} · ${ev.task || "working…"}`;
       break;
     case "step_done": {
       // The dock may have opened mid-run and missed this step's start: draw its row now
@@ -378,3 +388,333 @@ document.querySelectorAll(".media-btn").forEach((b) => {
     api().dock_media(b.dataset.media);
   });
 });
+
+/* =========================================================
+   Notch extras (Settings > Dock > Style: Notch; dock.css hides them otherwise)
+   - Home: quick toggles, calendar (+ Google events), weather, up next, focus timer.
+     Data comes from api.notch_home() (notch.py) each time the notch opens.
+   - Focus timer: Python owns it (it chimes even while the notch is hidden);
+     the page shows setTimer({end, total}) in the closed notch and in Home.
+   - HUD: Python calls setHud(kind, percent, muted) when the volume or the
+     brightness changes, and setHud(null) a moment later.
+   ========================================================= */
+const home = { events: [], month: null };
+let timer = null, timerTick = 0;
+
+function sameDay(a, b) { return a.toDateString() === b.toDateString(); }
+// "2026-11-02" (all-day) is a local date; "2026-11-02T15:00:00+05:30" a moment
+function eventDate(e) { return e.all_day ? new Date(e.start + "T00:00:00") : new Date(e.start); }
+
+function drawCalendar() {
+  const today = new Date();
+  const first = home.month || new Date(today.getFullYear(), today.getMonth(), 1);
+  home.month = first;
+  $("calTitle").textContent = first.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  const grid = $("calGrid");
+  grid.replaceChildren(...["S", "M", "T", "W", "T", "F", "S"].map((d) => el("span", "dow", d)));
+  const start = new Date(first);
+  start.setDate(1 - first.getDay());  // back to Sunday
+  for (let i = 0; i < 42; i++) {
+    const day = new Date(start);
+    day.setDate(start.getDate() + i);
+    const cell = el("span", "", String(day.getDate()));
+    if (day.getMonth() !== first.getMonth()) cell.classList.add("other");
+    if (sameDay(day, today)) cell.classList.add("today");
+    if (home.events.some((e) => sameDay(eventDate(e), day))) cell.classList.add("busy");
+    grid.appendChild(cell);
+  }
+}
+$("calPrev").onclick = (e) => { e.stopPropagation(); home.month = new Date(home.month.getFullYear(), home.month.getMonth() - 1, 1); drawCalendar(); };
+$("calNext").onclick = (e) => { e.stopPropagation(); home.month = new Date(home.month.getFullYear(), home.month.getMonth() + 1, 1); drawCalendar(); };
+
+function drawWeather(w) {
+  const box = $("weather");
+  if (!w || w.error) { box.replaceChildren(el("span", "muted", "Weather unavailable")); return; }
+  const now = el("div", "now");
+  now.append(icon(w.code <= 1 ? (w.day ? "sun" : "moon") : "cloud", 22), el("span", "", `${w.temp}°`));
+  box.replaceChildren(now, el("div", "text", w.text),
+                      el("div", "where", `${w.city ? w.city + " · " : ""}H ${w.high}° L ${w.low}°`));
+}
+
+function drawUpNext(cal) {
+  const box = $("upNext");
+  if (!cal.signed_in) {
+    const connect = button("Connect Google", "open", async (e) => {
+      e.stopPropagation();
+      connect.disabled = true;
+      const r = await api().notch_google();
+      if (r && !r.error) { home.events = r.events; drawCalendar(); drawUpNext(r); fit(); }
+      else connect.disabled = false;
+    });
+    box.replaceChildren(el("div", "muted", "See your Google Calendar here"), connect);
+    return;
+  }
+  const now = new Date();
+  const next = home.events.filter((e) => e.all_day ? eventDate(e) >= new Date(now.toDateString()) : eventDate(e) >= now).slice(0, 3);
+  if (!next.length) { box.replaceChildren(el("div", "muted", "Nothing coming up")); return; }
+  box.replaceChildren(...next.map((e) => {
+    const d = eventDate(e), row = el("div", "event");
+    const day = sameDay(d, now) ? "Today" : d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+    const time = e.all_day ? "All day" : d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    row.append(el("b", "", e.title), el("span", "", `${day} · ${time}`));
+    return row;
+  }));
+}
+
+function drawToggles(h) {
+  const b = h.battery || {};
+  const chip = $("homeBattery");
+  chip.replaceChildren();
+  if (b.percent != null) chip.append(icon(b.charging ? "zap" : "battery", 14), el("span", "", `${b.percent}%`));
+  setToggle("homeMute", h.muted, h.muted ? "volumeOff" : "volume");
+  setToggle("homeAwake", h.awake);
+}
+function setToggle(id, on, iconName) {
+  const btn = $(id);
+  btn.classList.toggle("on", !!on);
+  if (iconName && btn.dataset.shows !== iconName) { btn.replaceChildren(icon(iconName, 15)); btn.dataset.shows = iconName; }
+}
+$("homeMute").onclick = async (e) => { e.stopPropagation(); const m = await api().notch_toggle("mute"); setToggle("homeMute", m, m ? "volumeOff" : "volume"); };
+$("homeAwake").onclick = async (e) => { e.stopPropagation(); setToggle("homeAwake", await api().notch_toggle("awake")); };
+$("homeLock").onclick = (e) => { e.stopPropagation(); api().notch_toggle("lock"); };
+
+async function refreshHome() {
+  drawCalendar();
+  api().get_automations().then((a) => { workflows = a.workflows || []; }).catch(() => {});
+  const h = await api().notch_home();
+  home.events = (h.calendar && h.calendar.events) || [];
+  drawCalendar();
+  drawWeather(h.weather);
+  drawUpNext(h.calendar || {});
+  drawToggles(h);
+  setTimer(h.timer);
+  fit();
+}
+
+/* ---------- Focus timer ---------- */
+[5, 15, 25, 50].forEach((m) => {
+  const b = el("button", "", `${m} min`);
+  b.onclick = async (e) => { e.stopPropagation(); setTimer(await api().notch_timer(m)); };
+  $("timerPresets").appendChild(b);
+});
+const stopBtn = el("button", "stop", "Stop");
+stopBtn.onclick = async (e) => { e.stopPropagation(); await api().notch_timer(0); setTimer(null); };
+$("timerPresets").appendChild(stopBtn);
+
+function setTimer(t) {
+  timer = t && t.end > Date.now() ? t : null;
+  document.body.classList.toggle("timing", !!timer);
+  stopBtn.hidden = !timer;
+  clearInterval(timerTick);
+  drawTimer();
+  if (timer) timerTick = setInterval(drawTimer, 250);
+}
+function drawTimer() {
+  const big = $("timerBig");
+  big.classList.toggle("running", !!timer);
+  if (!timer) { big.textContent = "--:--"; return; }
+  const left = Math.max(0, timer.end - Date.now());
+  const text = clock(left + 999);  // 24:59.4 shows as 25:00, and 0:00 only at the end
+  $("pillTime").textContent = text;
+  $("pillChip").textContent = text;
+  big.textContent = text;
+  $("timerLine").style.width = `${(100 * (1 - left / timer.total)).toFixed(2)}%`;
+  if (!left) setTimer(null);
+}
+
+/* ---------- Volume / brightness HUD ---------- */
+function setHud(kind, percent, muted) {
+  if (!kind) { document.body.classList.remove("hud"); return; }
+  const name = kind === "brightness" ? "sun" : muted || !percent ? "volumeOff" : "volume";
+  const box = $("hudIcon");
+  if (box.dataset.shows !== name) { box.replaceChildren(icon(name, 16)); box.dataset.shows = name; }
+  $("hudBar").style.width = `${muted ? 0 : percent}%`;
+  $("hudPct").textContent = muted ? "Muted" : `${percent}%`;
+  document.body.classList.add("hud");
+}
+
+/* ---------- Banner: notifications in the closed notch (Python: dock.banner) ---------- */
+const BANNER = [440, 64];  // body size (dock.css)
+const BANNER_LOOK = {
+  ok: ["check", "var(--ok)"], error: ["error", "var(--err)"], warn: ["warn", "var(--warn)"],
+  info: ["info", "var(--accent-2)"], remind: ["bell", "#f5a524"], charger: ["zap", "var(--ok)"],
+  bluetooth: ["bluetooth", "#4c9aff"], clip: ["clipboard", "#c084fc"], ai: ["sparkles", "#f5a524"],
+};
+let bannerInfo = null;
+
+async function showBanner(info) {
+  const body = document.body;
+  if (!info) {
+    if (!body.classList.contains("has-banner")) return;
+    body.classList.remove("has-banner");
+    bannerInfo = null;
+    if (!body.classList.contains("open")) shapeTo(...pillSize());  // Python waits for the shrink
+    return;
+  }
+  if (body.classList.contains("open")) return;  // you are using the notch: no banner
+  bannerInfo = info;
+  const [name, color] = BANNER_LOOK[info.kind] || BANNER_LOOK.info;
+  const box = $("bannerIcon");
+  box.style.setProperty("--c", color);
+  box.replaceChildren(icon(name, 18));
+  $("bannerTitle").textContent = info.title;
+  $("bannerText").textContent = info.text || "";
+  $("bannerSnooze").hidden = !info.snooze;
+  await shapeTo(...BANNER);  // cut big enough first, then grow
+  body.classList.add("has-banner");
+}
+$("bannerSnooze").onclick = (e) => {
+  e.stopPropagation();
+  if (bannerInfo && bannerInfo.snooze) api().notify_snooze(bannerInfo.snooze);
+  showBanner(null);
+};
+$("banner").onclick = () => {
+  const kind = bannerInfo && bannerInfo.kind;
+  showBanner(null);
+  if (kind === "clip") { $("pill").click(); showTab("shelf"); }
+  else if (kind === "ai") { $("pill").click(); showTab("usage"); }
+  else if (["ok", "error", "warn", "info", "remind"].includes(kind)) api().notify_open();
+};
+
+/* ---------- Tabs: Home / Clipboard / AI usage ---------- */
+function showTab(name) {
+  document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("on", t.dataset.tab === name));
+  $("homePane").hidden = name !== "home";
+  $("shelfPane").hidden = name !== "shelf";
+  $("usagePane").hidden = name !== "usage";
+  if (name === "shelf") api().notch_shelf().then((items) => { setShelf(items); fit(); });
+  else if (name === "usage") api().notch_usage().then((u) => { drawUsage(u); fit(); });
+  else fit();
+}
+document.querySelectorAll(".tab").forEach((t) => {
+  t.onclick = (e) => { e.stopPropagation(); showTab(t.dataset.tab); };
+});
+
+function ago(ms) {
+  const s = Math.round((Date.now() - ms) / 1000);
+  return s < 60 ? "now" : s < 3600 ? `${Math.floor(s / 60)} min` : `${Math.floor(s / 3600)} h`;
+}
+
+// Python sends the shelf after every copy; it is also asked for when the tab opens
+function setShelf(items) {
+  const pane = $("shelfPane");
+  if (!items || !items.length) {
+    pane.replaceChildren(el("div", "pane-empty", "Copy some text and it shows up here. Click an item to copy it again."));
+    return;
+  }
+  pane.replaceChildren(...items.map((item, i) => {
+    const row = el("button", "clip");
+    row.type = "button";
+    row.title = item.text.slice(0, 400);
+    row.append(icon("clipboard", 14), el("span", "grow", item.text.replace(/\s+/g, " ")), el("span", "when", ago(item.at)));
+    row.onclick = async (e) => {
+      e.stopPropagation();
+      if (await api().notch_copy(i)) {
+        row.classList.add("copied");
+        row.querySelector(".when").textContent = "Copied";
+      }
+    };
+    return row;
+  }));
+}
+
+function drawUsage(u) {
+  const pane = $("usagePane");
+  const names = Object.keys(u.providers || {}).sort((a, b) => u.providers[b].ok - u.providers[a].ok);
+  const engine = u.mode === "cli" ? "agents" : "API keys";
+  const head = el("div", "pane-empty", `Today's AI requests (engine: ${engine}). A backup takes over when one fails or hits its limit.`);
+  if (!names.length) { pane.replaceChildren(head, el("div", "pane-empty", "No AI requests yet today.")); return; }
+  const most = Math.max(...names.map((n) => u.providers[n].ok + u.providers[n].failed));
+  pane.replaceChildren(head, ...names.map((n) => {
+    const p = u.providers[n], row = el("div", "prov");
+    const bar = el("span", "prov-bar"), ok = el("span", "ok"), bad = el("span", "bad");
+    ok.style.width = `${100 * p.ok / most}%`;
+    bad.style.width = `${100 * p.failed / most}%`;
+    bar.append(ok, bad);
+    row.append(el("b", "", n), bar, el("span", "count", p.failed ? `${p.ok} ok · ${p.failed} failed` : `${p.ok} ok`));
+    if (p.failed && p.last_error) row.appendChild(el("span", "prov-err", p.last_error));
+    return row;
+  }));
+}
+
+/* ---------- Command palette: commands that match what you type ----------
+   Every typed word must start a word of the command (e.g. "tim 25", "lock").
+   Enter runs the highlighted one; the last row always sends the text to Aura. */
+let workflows = [];
+const startTimer = async (m) => setTimer(await api().notch_timer(m));
+function commands() {
+  const list = [25, 5, 15, 50].map((m) => ({ label: `Start a ${m} min focus timer`, keys: "timer focus pomodoro", run: () => startTimer(m) }));
+  list.push(
+    { label: "Stop the focus timer", keys: "timer", run: async () => { await api().notch_timer(0); setTimer(null); } },
+    { label: "Mute / unmute", keys: "sound volume", run: () => $("homeMute").click() },
+    { label: "Keep awake on / off", keys: "caffeine sleep", run: () => $("homeAwake").click() },
+    { label: "Lock the PC", keys: "screen", run: () => api().notch_toggle("lock") },
+    { label: "Clipboard shelf", keys: "copy paste history", run: () => showTab("shelf") },
+    { label: "AI usage", keys: "limits providers", run: () => showTab("usage") },
+    { label: "Open Aura", keys: "window main app", run: () => api().dock_open_main() },
+    { label: "Settings", keys: "preferences options", run: () => api().tray_settings("") },
+    { label: "Dock settings", keys: "notch style shortcut", run: () => api().tray_settings("dock") },
+  );
+  workflows.forEach((w) => list.push({ label: `Run workflow: ${w.name}`, keys: "workflow", run: () => runTask(w.name) }));
+  return list;
+}
+const palette = { items: [], sel: 0 };
+
+function drawPalette() {
+  const text = input.value.trim(), box = $("palette");
+  if (document.documentElement.dataset.style !== "notch" || !text) {
+    palette.items = [];
+    if (!box.hidden) { box.hidden = true; fit(); }
+    return;
+  }
+  const words = text.toLowerCase().split(/\s+/);
+  const found = commands().filter((c) => {
+    const hay = `${c.label} ${c.keys}`.toLowerCase().split(/[^a-z0-9]+/);
+    return words.every((w) => hay.some((h) => h.startsWith(w)));
+  }).slice(0, 5);
+  palette.items = [...found, { label: `Ask Aura: ${text}`, ask: true, run: () => runTask(text) }];
+  palette.sel = 0;
+  box.replaceChildren(...palette.items.map((c, i) => {
+    const row = el("button", "cmd");
+    row.type = "button";
+    row.append(icon(c.ask ? "sparkles" : "zap", 14), el("span", "grow", c.label));
+    row.onclick = (e) => { e.stopPropagation(); pick(i); };
+    return row;
+  }));
+  markPalette();
+  box.hidden = false;
+  fit();
+}
+function markPalette() {
+  [...$("palette").children].forEach((row, i) => {
+    row.classList.toggle("sel", i === palette.sel);
+    const key = row.querySelector("kbd");
+    if (i === palette.sel && !key) row.appendChild(el("kbd", "", "Enter"));
+    else if (i !== palette.sel && key) key.remove();
+  });
+}
+function pick(i) {
+  const c = palette.items[i];
+  input.value = "";
+  drawPalette();
+  if (c) c.run();
+}
+function runTask(text) {  // send as a normal Aura task (skips the palette)
+  input.value = text;
+  palette.items = [];
+  $("dockForm").requestSubmit();
+}
+input.addEventListener("input", drawPalette);
+input.addEventListener("keydown", (e) => {
+  if (!palette.items.length || (e.key !== "ArrowDown" && e.key !== "ArrowUp")) return;
+  e.preventDefault();
+  palette.sel = (palette.sel + (e.key === "ArrowDown" ? 1 : -1) + palette.items.length) % palette.items.length;
+  markPalette();
+});
+// Runs before the normal submit (capture): a highlighted command wins over sending a task
+$("dockForm").addEventListener("submit", (e) => {
+  const c = palette.items[palette.sel];
+  if (c && !c.ask) { e.preventDefault(); e.stopImmediatePropagation(); pick(palette.sel); return; }
+  palette.items = [];
+  if (!$("palette").hidden) { $("palette").hidden = true; }
+}, true);

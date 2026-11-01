@@ -34,6 +34,8 @@ import webview
 import automations
 import config
 import google_sync
+import llm
+import notch
 import voice
 from agents.system import open_file, installed_apps
 from logger import recent, usage
@@ -134,6 +136,9 @@ class Api:
         self._dock = None
         self._hotkey = None
         self._notifier = None
+        self._awake = notch.KeepAwake()  # the notch's "keep awake" toggle
+        self._fallback_told = {}  # AI provider -> when the notch last said it failed (see _on_fallback)
+        llm.on_fallback = self._on_fallback
         self._lock = threading.Lock()  # one request at a time
         self._memory = {}  # the previous request's answer/file, for follow-ups like "send this answer"
         self._attachment = None  # file picked with the + button (a real path; the page only sees its name)
@@ -143,7 +148,9 @@ class Api:
     def get_info(self):
         """Agents, models and allowlists for the sidebar."""
         agents = {
-            name: {"model": s["model"], "fallback": s.get("fallback", {}).get("model")}
+            name: {"model": config.CLI_TOOLS[config.agent_cli(name)]["name"]
+                   if config.AI_MODE == "cli" and config.agent_cli(name) else s["model"],
+                   "fallback": s.get("fallback", {}).get("model")}
             for name, s in config.AGENT_MODELS.items()
         }
         # First name for the welcome greeting: USER_NAME from .env, else the Windows account name
@@ -211,10 +218,27 @@ class Api:
                     self._push(self._dock.window, f"onDockEvent({json.dumps(event)})")
         finally:
             self._lock.release()
-        if self._notifier:  # the "task done" card at the top-right of the screen
-            kind, title, says = notification(text, events)
-            self._notifier.notify(kind, f"Routine · {routine}" if routine else title, says)
+        kind, title, says = notification(text, events)
+        self._notify(kind, f"Routine · {routine}" if routine else title, says)
         return {"ok": True}
+
+    def _notify(self, kind, title, text, snooze=None):
+        """'Task done' and reminders: a banner in the notch (notch style), else the card at the top-right."""
+        if self._dock and self._dock.style == "notch":
+            self._dock.banner(kind, title, text, seconds=10 if snooze else 4.5, snooze=snooze)
+        elif self._notifier:
+            self._notifier.notify(kind, title, text, snooze=snooze)
+
+    def _on_fallback(self, failed, backup, error):
+        """llm.py: an AI provider failed or hit its limit and a backup took over. Tell once per
+        provider every 10 minutes (the notch's AI usage tab has the details)."""
+        now = datetime.now()
+        if now - self._fallback_told.get(failed, datetime.min) < timedelta(minutes=10):
+            return
+        self._fallback_told[failed] = now
+        limit = "429" in error or "limit" in error.lower() or "quota" in error.lower()
+        if self._dock:
+            self._dock.banner("ai", f"{failed} {'hit its limit' if limit else 'failed'}", f"Using {backup} instead")
 
     @staticmethod
     def _push(window, script):
@@ -360,6 +384,57 @@ class Api:
         """Now Playing buttons in the dock: 'toggle' | 'next' | 'previous' (nowplaying.py checks the word)."""
         return self._dock.media.press(str(command))
 
+    # ---------- Notch Home panel (notch.py) ----------
+    def notch_home(self):
+        """Everything the notch's Home panel shows. Weather and calendar are cached in notch.py."""
+        return {"weather": notch.weather(), "calendar": notch.calendar(), "battery": notch.battery(),
+                "muted": notch.mute(), "awake": self._awake.on, "timer": self._dock.timer}
+
+    def notch_toggle(self, name):
+        """Quick toggles in the notch: 'mute' | 'awake' | 'lock'. Returns the new state."""
+        if name == "mute":
+            return notch.mute(toggle=True)
+        if name == "awake":
+            return self._awake.toggle()
+        if name == "lock":
+            notch.lock_pc()
+        return None
+
+    def notch_timer(self, minutes):
+        """Start a focus timer for this many minutes (1-180), or 0 to stop it."""
+        try:
+            minutes = max(0, min(180, float(minutes)))
+        except (TypeError, ValueError):
+            return None
+        return self._dock.set_timer(minutes * 60)
+
+    def notch_usage(self):
+        """The notch's AI usage tab: today's requests per provider (llm.USAGE) and the AI mode."""
+        day = datetime.now().strftime("%Y-%m-%d")
+        providers = llm.USAGE["providers"] if llm.USAGE["day"] == day else {}
+        return {"mode": config.AI_MODE, "providers": providers}
+
+    def notch_shelf(self):
+        """The clipboard shelf: the last texts you copied, newest first."""
+        return self._dock.clipboard.items
+
+    def notch_copy(self, index):
+        """Copy a shelf item back to the clipboard."""
+        try:
+            item = self._dock.clipboard.items[int(index)]
+        except (TypeError, ValueError, IndexError):
+            return False
+        return self._dock.clipboard.copy(item["text"])
+
+    def notch_google(self):
+        """'Connect Google' in the notch's calendar: sign in (opens the browser), then read the events again."""
+        try:
+            google_sync._credentials()
+        except google_sync.GoogleError as e:
+            return {"error": str(e)}
+        notch._cache.pop("calendar", None)
+        return notch.calendar()
+
     def dock_open_main(self):
         """'Open Aura' in the dock or the tray: bring the main window back."""
         self._window.restore()
@@ -410,8 +485,7 @@ class Api:
         self._reminders[reminder["id"]] = reminder
         when = automations.parse_stamp(reminder["at"])
         note = f"Missed at {automations.clock(when)} while Aura was closed" if late and when else "Reminder"
-        if self._notifier:
-            self._notifier.notify("remind", reminder["text"], note, snooze=reminder["id"])
+        self._notify("remind", reminder["text"], note, snooze=reminder["id"])
         self._refresh_automations()
 
     def _start_routine(self, routine):
@@ -481,9 +555,14 @@ class Api:
             contacts = len(load_contacts())
         except ValueError:
             contacts = -1  # contacts.json is broken
-        dock = {"position": config.DOCK_POSITION, "shortcut": config.DOCK_SHORTCUT, "autohide": config.DOCK_AUTOHIDE,
+        dock = {"position": config.DOCK_POSITION, "style": config.DOCK_STYLE, "shortcut": config.DOCK_SHORTCUT, "autohide": config.DOCK_AUTOHIDE,
                 "shortcut_ok": bool(self._hotkey and self._hotkey.text == config.DOCK_SHORTCUT)}
-        return {"email": config.GMAIL_ADDRESS, "name": config.USER_NAME, "dock": dock,
+        ai = {"mode": config.AI_MODE, "orchestrator": config.ORCHESTRATOR_CLI,
+              "tools": {k: {"name": t["name"], "installed": bool(shutil.which(t["command"][0]))}
+                        for k, t in config.CLI_TOOLS.items()},
+              "agents": {a: os.getenv("AGENT_CLI_" + a.upper()) if os.getenv("AGENT_CLI_" + a.upper()) in config.CLI_TOOLS
+                         else "" for a in config.AGENT_MODELS if a not in ("orchestrator", "vision")}}
+        return {"email": config.GMAIL_ADDRESS, "name": config.USER_NAME, "dock": dock, "ai": ai,
                 "set": {name: bool(os.getenv(name)) for name in SETTINGS},
                 "google": google, "contacts": contacts,
                 "startup": self.get_startup(), "can_startup": sys.platform == "win32"}
@@ -509,7 +588,7 @@ class Api:
         return self.get_settings()
 
     def set_dock(self, values):
-        """Settings > Dock: position, shortcut or autohide. Applies at once and is saved to .env."""
+        """Settings > Dock: position, style (dock / notch), shortcut or autohide. Applies at once and is saved to .env."""
         values = dict(values or {})
         changes = {}
         if "position" in values:
@@ -517,6 +596,11 @@ class Api:
                 return {"error": "Pick one of the dock positions."}
             changes["DOCK_POSITION"] = values["position"]
             self._dock.set_position(values["position"])
+        if "style" in values:
+            if values["style"] not in ("dock", "notch"):
+                return {"error": "Pick dock or notch."}
+            changes["DOCK_STYLE"] = values["style"]
+            self._dock.set_style(values["style"])
         if "shortcut" in values:
             shortcut = str(values["shortcut"])
             if not self._hotkey.set(shortcut):
@@ -527,6 +611,24 @@ class Api:
             self._dock.set_autohide(bool(values["autohide"]))
         if changes:
             print(f"  [settings] dock {changes}")
+            config.save_env(changes)
+        return self.get_settings()
+
+    def set_ai(self, values):
+        """Settings > AI engine: mode (api/cli), the planner's CLI, or one agent's CLI ("" = same as the planner)."""
+        changes = {}
+        for name, value in dict(values or {}).items():
+            value = str(value)
+            if name == "mode" and value in config.AI_MODES:
+                changes["AI_MODE"] = value
+            elif name == "orchestrator" and value in config.CLI_TOOLS:
+                changes["ORCHESTRATOR_CLI"] = value
+            elif name in config.AGENT_MODELS and name not in ("orchestrator", "vision") and (value in config.CLI_TOOLS or not value):
+                changes["AGENT_CLI_" + name.upper()] = value
+            else:
+                return {"error": "That AI engine choice isn't available."}
+        if changes:
+            print(f"  [settings] ai {changes}")
             config.save_env(changes)
         return self.get_settings()
 
@@ -642,6 +744,7 @@ def main():
 
     def close_helpers():  # closing Aura closes the dock and the notification too
         dock.media.stop()  # and the Now Playing watcher
+        dock.stop_watchers()  # and the notch's watchers (volume, devices, clipboard)
         api._hotkey.stop()
         tray.stop()
         dock.window.destroy()

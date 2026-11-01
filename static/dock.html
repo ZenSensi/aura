@@ -22,13 +22,30 @@
     <span class="pill-song" id="pillSong"></span>
     <span class="pill-dot" id="pillDot"></span>
     <span class="eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+    <span class="pill-chip" id="pillChip"></span>  <!-- notch: the timer beside the song -->
+
     <span class="pill-progress"><span id="pillBar"></span></span>
+    <!-- Notch only: the focus timer, and the volume / brightness bar (on top of the rest) -->
+    <span class="pill-timer" id="pillTimer">
+      <i data-icon="clock" data-size="16"></i><b id="pillTime">0:00</b><span class="timer-tag">Focus</span>
+      <span class="timer-line"><span id="timerLine"></span></span>
+    </span>
+    <span class="pill-hud" id="pillHud">
+      <span id="hudIcon"></span><span class="hud-bar"><span id="hudBar"></span></span><b id="hudPct"></b>
+    </span>
   </button>
   <!-- Play / pause / next: on top of the pill's right end, shown when you hover it -->
   <div class="pill-controls" id="pillControls">
     <button class="media-btn" data-media="previous" title="Previous"><i data-icon="skipBack" data-size="13"></i></button>
     <button class="media-btn toggle" data-media="toggle" title="Play / pause"><i data-icon="pause" data-size="13"></i></button>
     <button class="media-btn" data-media="next" title="Next"><i data-icon="skipNext" data-size="13"></i></button>
+  </div>
+
+  <!-- Notch: a notification banner (task done, reminder, charger, Bluetooth, copied, AI limit) -->
+  <div class="banner" id="banner" role="status" aria-live="polite">
+    <span class="banner-icon" id="bannerIcon"></span>
+    <span class="banner-main"><b id="bannerTitle"></b><span id="bannerText"></span></span>
+    <button class="btn" id="bannerSnooze" hidden>Snooze</button>
   </div>
 
   <!-- Expanded: input + results -->
@@ -57,6 +74,46 @@
         <button class="media-btn" data-media="previous" title="Previous"><i data-icon="skipBack" data-size="15"></i></button>
         <button class="media-btn toggle big" data-media="toggle" title="Play / pause"><i data-icon="pause" data-size="16"></i></button>
         <button class="media-btn" data-media="next" title="Next"><i data-icon="skipNext" data-size="15"></i></button>
+      </div>
+    </div>
+    <!-- Notch only: commands matching what you type (Enter runs the highlighted one) -->
+    <div class="palette" id="palette" hidden></div>
+    <!-- Notch only: Home (calendar, weather, up next, focus timer, quick toggles); filled by dock.js -->
+    <div class="home" id="home">
+      <div class="home-bar">
+        <div class="tabs" role="tablist">
+          <button class="tab on" data-tab="home" role="tab">Home</button>
+          <button class="tab" data-tab="shelf" role="tab">Clipboard</button>
+          <button class="tab" data-tab="usage" role="tab">AI usage</button>
+        </div>
+        <span class="chip" id="homeBattery"></span>
+        <span class="grow"></span>
+        <button class="round-btn" id="homeMute" title="Mute"><i data-icon="volume" data-size="15"></i></button>
+        <button class="round-btn" id="homeAwake" title="Keep awake (no sleep)"><i data-icon="coffee" data-size="15"></i></button>
+        <button class="round-btn" id="homeLock" title="Lock the PC"><i data-icon="lock" data-size="15"></i></button>
+      </div>
+      <div class="shelf pane" id="shelfPane" hidden></div>
+      <div class="usage pane" id="usagePane" hidden></div>
+      <div class="home-grid pane" id="homePane">
+        <section class="cal">
+          <div class="cal-head">
+            <b id="calTitle"></b>
+            <button class="round-btn small" id="calPrev" title="Previous month"><i data-icon="left" data-size="13"></i></button>
+            <button class="round-btn small" id="calNext" title="Next month"><i data-icon="right" data-size="13"></i></button>
+          </div>
+          <div class="cal-grid" id="calGrid"></div>
+        </section>
+        <section>
+          <div class="home-label"><i data-icon="cloud" data-size="13"></i> Weather</div>
+          <div class="weather" id="weather"><span class="muted">Loading…</span></div>
+          <div class="home-label up">Up next</div>
+          <div class="up-next" id="upNext"></div>
+        </section>
+        <section>
+          <div class="home-label"><i data-icon="clock" data-size="13"></i> Focus timer</div>
+          <div class="timer-big" id="timerBig">--:--</div>
+          <div class="timer-presets" id="timerPresets"></div>
+        </section>
       </div>
     </div>
     <div class="dock-results" id="dockResults"></div>

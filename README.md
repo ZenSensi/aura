@@ -165,15 +165,17 @@ WhatsApp Desktop must be installed and signed in.
 <details>
 <summary><b>Phone reminders (Google Tasks + Calendar)</b></summary>
 
-1. In [Google Cloud Console](https://console.cloud.google.com) create a project and enable the **Google Tasks API**
-   and **Google Calendar API**.
-2. OAuth consent screen: External, add your Gmail as a test user, then **Publish app** (in Testing mode Google signs
-   you out every 7 days).
-3. Credentials → Create credentials → OAuth client ID → **Desktop app** → download the JSON and save it as
-   `google_client.json` in Aura's data folder (`%LOCALAPPDATA%\Aura` for the exe, see "Files" below).
+With **Aura.exe** there is nothing to set up: the first phone reminder (or **Connect Google** in the notch) opens
+Google's sign-in page, and the permission is kept in `google_token.json` on your PC. Google may say the app isn't
+verified yet: click **Advanced → Go to Aura** to continue.
 
-The first phone reminder opens Google's sign-in page; after that the permission is kept in `google_token.json`.
-Aura only asks for Tasks and Calendar, and only ever adds.
+Running from source, or want your own Google project? In [Google Cloud Console](https://console.cloud.google.com)
+enable the **Google Tasks API** and **Google Calendar API**, publish the app (Google Auth Platform → Audience), create a
+**Desktop app** client and save its JSON as `google_client.json` in Aura's data folder (`%LOCALAPPDATA%\Aura` for the
+exe, see "Files" below). Your own file is used instead of the built-in one.
+
+Aura only asks for Tasks and Calendar events: it adds the ones you ask for and reads upcoming events for the notch.
+Privacy policy: [zensensi.github.io/aura/privacy.html](https://zensensi.github.io/aura/privacy.html)
 </details>
 
 <details>

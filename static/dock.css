@@ -62,6 +62,18 @@ body.dock-body {
 }
 .pill-text { text-shadow: 0 1px 2px rgba(0, 0, 0, .35); } /* readable on bright backgrounds */
 
+/* Notch (Settings > Dock > Style): solid black, stuck to the top edge of the screen
+   (no ring above it), square top corners, round bottom ones, grows downwards.
+   dock.py cuts the window to match (square top in _cut, no margin in _place). */
+html[data-style="notch"] body.dock-body {
+  margin-top: 0; background: #000; border-radius: 0 0 20px 20px; box-shadow: none;
+}
+/* A little bigger than the pill (NOTCH in dock.py, pillSize in dock.js); :not(.open) so the card keeps its size */
+html[data-style="notch"] body.dock-body:not(.open) { width: 360px; height: 46px; }
+html[data-style="notch"] .pill-btn { width: 360px; height: 46px; margin-left: -180px; padding: 0 22px 0 14px; gap: 12px; }
+html[data-style="notch"] .pill-controls { height: 46px; right: calc(50% - 180px); padding-right: 12px; }
+html[data-style="notch"] .pill-progress { left: 56px; right: 26px; bottom: 4px; }
+
 /* ---------- Pill ----------
    The pill's content and the panel both stay in the page at their final size,
    centred, and cross-fade; the growing body reveals the panel from the middle. */
@@ -269,3 +281,165 @@ body.open .pill-controls { display: none; }
 .now-bar { flex: 1; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, .12); overflow: hidden; }
 body.no-time .now-time { display: none; }
 .now-controls { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+
+/* =========================================================
+   Notch extras (only with html[data-style="notch"])
+   ========================================================= */
+.pill-timer, .pill-hud, .home { display: none; }
+
+/* Collapsed notch: the focus timer and the volume / brightness bar cover the
+   normal content (black on black, so nothing behind shows). HUD wins. */
+html[data-style="notch"] body.timing:not(.busy) .pill-timer,
+html[data-style="notch"] body.hud .pill-hud {
+  display: flex; position: absolute; inset: 0; align-items: center; gap: 12px;
+  padding: 0 22px; background: #000; color: var(--text);
+}
+html[data-style="notch"] body.hud .pill-timer { display: none; }
+.pill-timer b { flex: 1; text-align: center; font-size: 15px; font-variant-numeric: tabular-nums; }
+.pill-timer .icon { color: #f5a524; }
+.timer-tag {
+  font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  color: #f5a524; padding: 3px 8px; border-radius: 999px; background: rgba(245, 165, 36, .14);
+}
+.timer-line { position: absolute; left: 22px; right: 22px; bottom: 5px; height: 2px; border-radius: 1px; background: rgba(255, 255, 255, .12); }
+.timer-line span { display: block; height: 100%; width: 0; border-radius: inherit; background: #f5a524; }
+.hud-bar { flex: 1; height: 6px; border-radius: 3px; background: rgba(255, 255, 255, .16); overflow: hidden; }
+.hud-bar span { display: block; height: 100%; border-radius: inherit; background: #fff; transition: width .12s ease; }
+.pill-hud b { width: 38px; text-align: right; font-size: 13px; font-variant-numeric: tabular-nums; }
+
+/* Open notch: Home */
+html[data-style="notch"] .home { display: block; padding: 0 16px 14px; flex-shrink: 0; }
+.home-bar { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; }
+.home-bar .grow { flex: 1; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px;
+  border-radius: 999px; background: rgba(255, 255, 255, .07); font-size: 12.5px; font-weight: 600;
+}
+.chip:empty { display: none; }
+.round-btn {
+  width: 32px; height: 32px; border-radius: 50%; border: none; display: grid; place-items: center;
+  background: rgba(255, 255, 255, .07); color: var(--muted); cursor: pointer;
+}
+.round-btn:hover { color: var(--text); background: rgba(255, 255, 255, .13); }
+.round-btn.on { background: var(--text); color: #000; }
+.round-btn.small { width: 24px; height: 24px; }
+.home-grid { display: grid; grid-template-columns: 1.15fr 1fr .85fr; gap: 18px; }
+.home-label {
+  display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600;
+  color: var(--muted); margin-bottom: 8px;
+}
+.home-label.up { margin-top: 14px; text-transform: uppercase; letter-spacing: .05em; font-size: 10.5px; }
+
+.cal-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.cal-head b { flex: 1; font-size: 13px; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; text-align: center; }
+.cal-grid span { position: relative; height: 22px; line-height: 22px; font-size: 11.5px; font-weight: 600; }
+.cal-grid .dow { color: var(--faint); font-weight: 500; font-size: 10.5px; }
+.cal-grid .other { color: rgba(255, 255, 255, .25); }
+.cal-grid .today::before {
+  content: ""; position: absolute; inset: 0; margin: auto; width: 22px; height: 22px;
+  border-radius: 50%; background: var(--accent); z-index: -1;
+}
+.cal-grid .busy::after {
+  content: ""; position: absolute; left: 50%; bottom: 0; width: 4px; height: 4px; margin-left: -2px;
+  border-radius: 50%; background: var(--accent-2);
+}
+.cal-grid { isolation: isolate; }
+
+.weather .now { display: flex; align-items: center; gap: 8px; font-size: 26px; font-weight: 700; }
+.weather .text { font-size: 12.5px; font-weight: 600; margin-top: 2px; }
+.weather .where { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.up-next { display: flex; flex-direction: column; gap: 8px; }
+.event { border-left: 3px solid var(--accent); padding-left: 8px; }
+.event:nth-child(2) { border-color: var(--ok); }
+.event:nth-child(3) { border-color: var(--warn); }
+.event b { display: block; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.event span { font-size: 11px; color: var(--muted); }
+.up-next .muted { font-size: 12px; color: var(--muted); }
+.up-next .btn { padding: 4px 9px; font-size: 11.5px; margin-top: 6px; }
+
+.timer-big { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; margin: 4px 0 10px; }
+.timer-big.running { color: #f5a524; }
+.timer-presets { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.timer-presets button {
+  height: 28px; border-radius: 9px; border: 1px solid var(--border); background: rgba(255, 255, 255, .04);
+  color: var(--text); font: inherit; font-size: 12px; cursor: pointer;
+}
+.timer-presets button:hover { border-color: var(--border-strong); }
+.timer-presets .stop { grid-column: span 2; color: var(--err); }
+
+/* ---------- Phase 2: banner, timer chip, tabs, clipboard shelf, AI usage, palette ---------- */
+.banner, .pill-chip { display: none; }
+
+/* Banner: the closed notch grows into a notification (440 x 64, BANNER in dock.js) */
+html[data-style="notch"] body.has-banner:not(.open) { width: 440px; height: 64px; }
+html[data-style="notch"] body.has-banner:not(.open) .pill-btn { opacity: 0; pointer-events: none; }
+html[data-style="notch"] body.has-banner:not(.open) .banner {
+  display: flex; position: absolute; inset: 0; align-items: center; gap: 12px; padding: 0 16px 0 14px;
+  background: #000; cursor: pointer; animation: rise .3s ease both;
+}
+.banner-icon {
+  width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0; display: grid; place-items: center;
+  color: var(--c, var(--accent)); background: color-mix(in srgb, var(--c, var(--accent)) 16%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c, var(--accent)) 45%, transparent);
+}
+.banner-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.banner-main b, .banner-main span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.banner-main b { font-size: 13.5px; }
+.banner-main span { font-size: 12px; color: var(--muted); }
+.banner .btn { padding: 5px 11px; font-size: 12px; flex-shrink: 0; }
+
+/* Live activity: a timer beside the playing song (the song keeps the notch) */
+html[data-style="notch"] body.media.timing:not(.busy) .pill-timer { display: none; }
+html[data-style="notch"] body.media.timing:not(.busy) .eq { display: none; }
+html[data-style="notch"] body.media.timing:not(.busy) .pill-chip {
+  display: inline-block; flex-shrink: 0; padding: 3px 8px; border-radius: 999px; font-size: 11.5px; font-weight: 700;
+  font-variant-numeric: tabular-nums; color: #f5a524; background: rgba(245, 165, 36, .14);
+}
+/* Live activity: Aura working (body.busy) shows the running agent and its task */
+html[data-style="notch"] body.busy .pill-logo { animation: spin 2.4s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Tabs */
+.tabs { display: flex; gap: 2px; padding: 3px; border-radius: 999px; background: rgba(255, 255, 255, .06); margin-right: 6px; }
+.tab {
+  height: 26px; padding: 0 12px; border: none; border-radius: 999px; background: transparent;
+  color: var(--muted); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.tab:hover { color: var(--text); }
+.tab.on { background: rgba(255, 255, 255, .14); color: var(--text); }
+
+/* Clipboard shelf */
+.shelf { display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow-y: auto; }
+.clip {
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; cursor: pointer;
+  background: rgba(255, 255, 255, .04); border: 1px solid var(--border); text-align: left; color: var(--text); font: inherit;
+}
+.clip:hover { border-color: var(--border-strong); }
+.clip .grow { flex: 1; min-width: 0; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.clip .when { font-size: 11px; color: var(--faint); flex-shrink: 0; }
+.clip.copied { border-color: var(--ok); }
+.pane-empty { font-size: 12.5px; color: var(--muted); padding: 6px 2px; }
+
+/* AI usage */
+.usage { display: flex; flex-direction: column; gap: 8px; }
+.prov { display: grid; grid-template-columns: 120px 1fr auto; align-items: center; gap: 10px; font-size: 12.5px; }
+.prov b { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.prov-bar { height: 8px; border-radius: 4px; background: rgba(255, 255, 255, .08); overflow: hidden; display: flex; }
+.prov-bar .ok { background: var(--ok); }
+.prov-bar .bad { background: var(--err); }
+.prov .count { font-variant-numeric: tabular-nums; color: var(--muted); }
+.prov-err { grid-column: 2 / 4; font-size: 11px; color: var(--warn); margin-top: -4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Command palette (under the input while you type) */
+html[data-style="notch"] .palette:not([hidden]) { display: flex; }
+.palette { display: none; flex-direction: column; gap: 2px; padding: 0 16px 12px; flex-shrink: 0; }
+.cmd {
+  display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 12px; border-radius: 10px; border: none;
+  background: transparent; color: var(--muted); font: inherit; font-size: 13px; text-align: left; cursor: pointer;
+}
+.cmd .grow { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cmd kbd { font: inherit; font-size: 11px; color: var(--faint); }
+.cmd.sel, .cmd:hover { background: rgba(255, 255, 255, .09); color: var(--text); }
+/* the hidden attribute must win over the display rules above (.btn is inline-flex, panes are flex / grid) */
+.pane[hidden], .banner .btn[hidden] { display: none !important; }
