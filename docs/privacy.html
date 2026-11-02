@@ -32,12 +32,26 @@
         <td>Adds an event with an alert when you ask for a timed reminder, so it rings on your phone.
           Reads your upcoming events to show them in Aura's notch (calendar and "Up next").</td></tr>
   </table>
+  <p><b>Gmail</b> is a separate, optional sign-in ("Connect Gmail" in Settings), so connecting Tasks and Calendar never
+    gives Aura your email. If you connect it, Aura asks for one more permission:</p>
+  <table>
+    <tr><th>Permission</th><th>What Aura does with it</th></tr>
+    <tr><td>Gmail (read, compose, send and organise)<br><code>auth/gmail.modify</code></td>
+        <td>Only when you ask: searches and reads emails in your inbox to summarise them, sends an email Aura wrote for
+          you (it shows you the recipient and text and sends only after you click Yes, unless a routine you set up sends
+          it), and archives, labels, stars, marks read/unread or moves to Trash the emails you name. It never deletes
+          email permanently and never forwards email.</td></tr>
+  </table>
   <ul>
     <li>Your Google data goes directly between your PC and Google. It is never sent to the developer or to any other company.</li>
     <li>Aura does not share, sell or transfer Google user data, and does not use it for advertising.</li>
     <li>Google data is not used to train AI models. Event titles are not sent to any AI service.</li>
-    <li>The sign-in token is saved only on your PC (<code>google_token.json</code> in Aura's folder).</li>
-    <li>You can disconnect at any time by deleting that file, or by removing Aura at
+    <li>To summarise or reply to emails, the senders, subjects and the start of each email found are sent to the AI
+      provider (or AI tool) you chose in Settings, only for that request. Emails you only archive, label or trash are
+      not sent to any AI service.</li>
+    <li>The sign-in tokens are saved only on your PC (<code>google_token.json</code> and <code>gmail_token.json</code>
+      in Aura's folder).</li>
+    <li>You can disconnect at any time with Disconnect in Settings, by deleting those files, or by removing Aura at
       <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>.</li>
   </ul>
   <p>Aura's use and transfer of information received from Google APIs adheres to the
@@ -53,9 +67,9 @@
     <li><b>Files and pictures you attach</b> (the + button) are read on your PC; their text, or the picture, goes to
       the AI provider (or AI tool) that answers, as above.</li>
     <li><b>Voice typing:</b> the recording is sent to Groq to turn it into text, then deleted from your PC.</li>
-    <li><b>Email:</b> if you add your Gmail address and app password, Aura reads and sends email only when you ask
-      (for example "summarise my unread emails"). This uses Gmail's own mail servers with your app password, not the
-      Google sign-in above. To summarise or reply, the senders, subjects and the start of each email found go to the
+    <li><b>Email without Connect Gmail:</b> if you add your Gmail address and app password instead, Aura reads and
+      sends email only when you ask (for example "summarise my unread emails"). This uses Gmail's own mail servers
+      with your app password, not the Google sign-in above, and can't change your emails. To summarise or reply, the senders, subjects and the start of each email found go to the
       AI provider that answers. A reply goes to the sender of the email Aura found, so check who it is from first.</li>
     <li><b>Web search and news:</b> search words go to Tavily (if you add a key) and Google News; market prices come from Yahoo Finance.</li>
     <li><b>Weather in the notch:</b> your internet address is used to find your city (ipwho.is or ipapi.co),

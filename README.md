@@ -73,7 +73,7 @@ sidebar.
 | **Writer** | Letters, emails, messages, notes; saves them as `.txt` in `outputs/` | Yes |
 | **System** | Opens any installed app (risky ones blocked), allowlisted websites, or the last file written/found | Yes (picks the name only) |
 | **Mailer** | Sends the email the Writer just wrote, through Gmail | **No** — plain Python with strict checks |
-| **Inbox** | Reads, searches and summarises your Gmail (read-only) | Yes |
+| **Inbox** | Reads, searches and summarises your Gmail; with **Connect Gmail** also archives, trashes, labels, stars and marks read/unread | Yes |
 | **Files** | Finds files on your PC by name, type and date | Yes (plans the search) |
 | **News** | Tech, finance and market news (Google News RSS) and stock prices with charts (Yahoo Finance) | Yes |
 | **Calc** | Exact arithmetic and percentages | **No** |
@@ -140,7 +140,7 @@ Open `.env` and paste your keys (see below), or start Aura and fill them in from
 | `GEMINI_API_KEY` | Backup model | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) |
 | `OPENROUTER_API_KEY` | Last-resort free models | [openrouter.ai/keys](https://openrouter.ai/keys) |
 | `TAVILY_API_KEY` | Web agent, Spotify song lookup | [tavily.com](https://tavily.com) (1,000 free searches/month) |
-| `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD` | Mailer and Inbox | [App passwords](https://myaccount.google.com/apppasswords) (needs 2-Step Verification) |
+| `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD` | Mailer and Inbox, when Gmail isn't connected (Settings > Connections > **Connect Gmail** needs no password) | [App passwords](https://myaccount.google.com/apppasswords) (needs 2-Step Verification) |
 | `USER_NAME` | Signing emails, the greeting | — |
 | `NOTION_TOKEN` | Notion agent | [notion.so/profile/integrations](https://www.notion.so/profile/integrations) |
 
@@ -175,6 +175,11 @@ enable the **Google Tasks API** and **Google Calendar API**, publish the app (Go
 exe, see "Files" below). Your own file is used instead of the built-in one.
 
 Aura only asks for Tasks and Calendar events: it adds the ones you ask for and reads upcoming events for the notch.
+
+**Gmail** has its own button: Settings → Connections → **Connect Gmail** (kept in `gmail_token.json`). It lets the
+Inbox and Mailer read, send, archive, label, star, mark read/unread and trash mail through the Gmail API, with no App
+Password. Your own Google project also needs the **Gmail API** enabled.
+
 Privacy policy: [zensensi.github.io/aura/privacy.html](https://zensensi.github.io/aura/privacy.html)
 </details>
 
@@ -224,6 +229,7 @@ the project folder, next to `.env`, `outputs\` and `logs\`.
 | `write a leave letter for 2 days` | Writer writes it and saves it in `outputs/` |
 | `write an email to friend@gmail.com wishing her luck, then send it` | Writer → Mailer |
 | `summarise my 5 latest unread emails` | Inbox reads Gmail (read-only) |
+| `archive the 5 latest emails from amazon` | Inbox (needs Connect Gmail) |
 | `open vs code` / `open youtube` | System opens the app or site |
 | `find my resume pdf and open it` | Files finds it, System opens it |
 | `today's tech and stock market news` | News with market charts |
@@ -242,9 +248,13 @@ the project folder, next to `.env`, `outputs\` and `logs\`.
 
 Actions that can't be undone are guarded by **Python, not by the model**:
 
+- **Ask before sending:** every email and WhatsApp message shows a Yes/No box with the recipient and the text
+  first. No is the default, and no answer in 5 minutes counts as No. Routines you set up send without asking.
+
 - **Email:** sends only to addresses **you typed** (or, for a reply, to the sender of the email the Inbox found:
   check who it is from before asking for a reply), only the email written in the same request, refuses drafts with
-  blanks like `[Your Name]`, max 3 recipients. The Inbox is opened read-only and never marks mail as read.
+  blanks like `[Your Name]`, max 3 recipients. Reading never marks mail as read. With Connect Gmail the Inbox can
+  change only the emails its search found (max 10); Trash is the most it does (never deletes forever or forwards).
 - **WhatsApp:** sends only to a contact you named, from your own `contacts.json`, and presses Enter only if the
   WhatsApp window is in front.
 - **AI tools as the engine** (Claude Code, Codex, Antigravity, OpenCode): started with their tools switched off

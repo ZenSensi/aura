@@ -280,6 +280,8 @@ def run_whatsapp(task, state):
         return make_result("send_whatsapp", name, f"[dry run] Would send on WhatsApp to {name.title()}", start)
     if sys.platform != "win32":
         return refuse("sending on WhatsApp only works on Windows.", start)
+    if state.get("confirm") and not state["confirm"]("whatsapp", name.title(), text):
+        return refuse("you chose not to send it.", start)
 
     # 3. Open the chat, type the message, press Enter
     # (WhatsApp Desktop ignores the link's "text=" part, so the message is typed instead)

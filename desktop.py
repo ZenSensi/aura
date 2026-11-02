@@ -128,6 +128,19 @@ def notification(request, events):
     return "ok", request, done + (says(steps[-1]) if steps else "All done!")
 
 
+def confirm_send(kind, to, text):
+    """Asked by the Mailer / WhatsApp agents right before sending: a Windows Yes/No box on top
+    of everything (works from the main window, the dock and the notch). No is the default
+    button; no answer in 5 minutes counts as No. Routines don't ask (see run)."""
+    what = "email" if kind == "email" else "WhatsApp message"
+    preview = text if len(text) <= 700 else text[:700] + "…"
+    flags = 0x4 | 0x20 | 0x100 | 0x10000 | 0x40000  # YESNO, ICONQUESTION, DEFBUTTON2, SETFOREGROUND, TOPMOST
+    # MessageBoxTimeoutW: user32's MessageBox with a timeout (returns 32000 when it runs out)
+    answer = ctypes.windll.user32.MessageBoxTimeoutW(None, f"Send this {what} to {to}?\n\n{preview}",
+                                                    f"Aura · Send {what}?", flags, 0, 5 * 60 * 1000)
+    return answer == 6  # IDYES
+
+
 class Api:
     """Python functions the page can call. Names starting with _ stay hidden."""
 
@@ -206,7 +219,8 @@ class Api:
             routine = str(options.get("routine") or "")[:60]
             for event in run_request(text, memory=self._memory, attachment=attachment,
                                      web=bool(options.get("web")), automated=bool(routine),
-                                     agent=str(options.get("agent") or "") or None):
+                                     agent=str(options.get("agent") or "") or None,
+                                     confirm=None if routine else confirm_send):  # you set routines up yourself
                 # Only give the page the file NAME, not the full path
                 if event["type"] == "step_done" and event["agent"] == "writer":
                     result = dict(event["result"], file=os.path.basename(event["result"]["file"]))
@@ -554,6 +568,7 @@ class Api:
             google = "not_setup"
         else:
             google = "connected" if os.path.isfile(google_sync.TOKEN_FILE) else "signed_out"
+        gmail = "not_setup" if google == "not_setup" else "connected" if google_sync.gmail_connected() else "signed_out"
         try:
             contacts = len(load_contacts())
         except ValueError:
@@ -569,7 +584,7 @@ class Api:
                          else "" for a in config.AGENT_MODELS if a not in ("orchestrator", "vision")}}
         return {"email": config.GMAIL_ADDRESS, "name": config.USER_NAME, "dock": dock, "ai": ai,
                 "set": {name: bool(os.getenv(name)) for name in SETTINGS},
-                "google": google, "contacts": contacts,
+                "google": google, "gmail": gmail, "contacts": contacts,
                 "startup": self.get_startup(), "can_startup": sys.platform == "win32"}
 
     def save_settings(self, values):
@@ -658,6 +673,24 @@ class Api:
         """Forget the Google sign-in on this PC."""
         try:
             os.remove(google_sync.TOKEN_FILE)
+        except FileNotFoundError:
+            pass
+        return self.get_settings()
+
+    def gmail_connect(self):
+        """Connect Gmail (its own Google sign-in, separate from Tasks + Calendar). Waits until it's done."""
+        try:
+            google_sync.gmail_credentials()
+        except google_sync.GoogleError as e:
+            return {"error": str(e)}
+        except Exception as e:  # Google libraries missing, no internet...
+            return {"error": f"Couldn't connect Gmail ({e})."}
+        return self.get_settings()
+
+    def gmail_disconnect(self):
+        """Forget the Gmail sign-in on this PC (the App Password, if saved, is used again)."""
+        try:
+            os.remove(google_sync.GMAIL_TOKEN_FILE)
         except FileNotFoundError:
             pass
         return self.get_settings()

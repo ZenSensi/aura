@@ -71,7 +71,8 @@ def main():
             print("Bye!")
             break
 
-        for event in run_request(user_text):
+        ask = lambda kind, to, text: input(f"\nSend this {kind} to {to}?\n{text}\n[y/N] ").strip().lower() == "y"
+        for event in run_request(user_text, confirm=ask):
             print_event(event)
 
 

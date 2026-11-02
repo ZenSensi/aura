@@ -22,9 +22,15 @@ To use your own Google project instead (or when running from source):
   3. Clients -> Create client -> "Desktop app" -> download the JSON and save it
      as google_client.json in Aura's data folder (it wins over the built-in one).
 
-SAFETY: Aura asks only for Tasks and Calendar events, nothing else in the
-account (no Gmail, no Drive). It adds tasks and events you ask for, and reads
-upcoming events only to show them in the notch.
+SAFETY: "Connect Google" asks only for Tasks and Calendar events (no Gmail,
+no Drive). It adds tasks and events you ask for, and reads upcoming events only
+to show them in the notch.
+
+GMAIL is a separate button ("Connect Gmail", its own sign-in and gmail_token.json),
+so Tasks/Calendar never carry Gmail access. It asks for gmail.modify: read, send,
+archive, label, mark read/unread and move to Trash. It can't delete forever.
+Used only by the Inbox and Mailer agents, for what you ask. (Your own Google
+project also needs the "Gmail API" enabled.)
 """
 
 import os
@@ -40,6 +46,9 @@ CLIENT_FILE = _OWN_CLIENT if os.path.isfile(_OWN_CLIENT) or not getattr(sys, "_M
 TOKEN_FILE = os.path.join(config.BASE_DIR, "google_token.json")
 SCOPES = ["https://www.googleapis.com/auth/tasks",
           "https://www.googleapis.com/auth/calendar.events"]
+GMAIL_TOKEN_FILE = os.path.join(config.BASE_DIR, "gmail_token.json")
+GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
+GMAIL_URL = "https://gmail.googleapis.com/gmail/v1/users/me/"
 TASKS_URL = "https://tasks.googleapis.com/tasks/v1/lists/@default/tasks"
 EVENTS_URL = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
 EVENT_MINUTES = 15     # how long the Calendar event lasts
@@ -57,9 +66,11 @@ def ready():
     return os.path.isfile(CLIENT_FILE)
 
 
-def _credentials(interactive=True):
+def _credentials(interactive=True, token_file=TOKEN_FILE, scopes=SCOPES,
+                 done="Aura is connected to Google Tasks and Calendar. You can close this tab."):
     """Saved sign-in, refreshed if old; or a new sign-in in the browser the first time.
-    interactive=False (the notch's calendar, in the background): never open the browser."""
+    interactive=False (the notch's calendar, in the background): never open the browser.
+    token_file / scopes / done: the Gmail sign-in passes its own (see gmail_credentials)."""
     # Imported here so Aura still starts if these libraries are missing
     from google.auth.exceptions import RefreshError
     from google.auth.transport.requests import Request
@@ -71,9 +82,9 @@ def _credentials(interactive=True):
                           f"in {config.BASE_DIR} (see the steps at the top of google_sync.py).")
     with _lock:
         creds = None
-        if os.path.isfile(TOKEN_FILE):
+        if os.path.isfile(token_file):
             try:
-                creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
+                creds = Credentials.from_authorized_user_file(token_file, scopes)
             except (ValueError, OSError):
                 creds = None
         if creds and creds.valid:
@@ -86,18 +97,46 @@ def _credentials(interactive=True):
         if (not creds or not creds.valid) and not interactive:
             raise GoogleError("Not signed in to Google.")
         if not creds or not creds.valid:
-            flow = InstalledAppFlow.from_client_secrets_file(CLIENT_FILE, SCOPES)
+            flow = InstalledAppFlow.from_client_secrets_file(CLIENT_FILE, scopes)
             try:
                 creds = flow.run_local_server(
                     port=0, open_browser=True, timeout_seconds=SIGN_IN_WAIT,
-                    success_message="Aura is connected to Google Tasks and Calendar. You can close this tab.")
+                    success_message=done)
             except Exception as e:  # closed tab, timeout, "Cancel"...
                 raise GoogleError(f"Google sign-in didn't finish ({e}).")
             if not creds:
                 raise GoogleError("Google sign-in didn't finish.")
-        with open(TOKEN_FILE, "w", encoding="utf-8") as f:
+        with open(token_file, "w", encoding="utf-8") as f:
             f.write(creds.to_json())
         return creds
+
+
+# ---------- Gmail (its own sign-in: "Connect Gmail" in Settings) ----------
+def gmail_connected():
+    return os.path.isfile(GMAIL_TOKEN_FILE)
+
+
+def gmail_credentials(interactive=True):
+    return _credentials(interactive, GMAIL_TOKEN_FILE, GMAIL_SCOPES,
+                        "Aura is connected to your Gmail. You can close this tab.")
+
+
+def gmail(method, path, **kwargs):
+    """One Gmail API call (saved sign-in only, never opens the browser), e.g.
+    gmail("GET", "messages", params={"q": "is:unread"}). Returns the reply as a dict."""
+    from google.auth.transport.requests import AuthorizedSession
+    session = AuthorizedSession(gmail_credentials(interactive=False))
+    try:
+        reply = session.request(method, GMAIL_URL + path, timeout=config.API_TIMEOUT_SECONDS, **kwargs)
+    except Exception as e:
+        raise GoogleError(f"Couldn't reach Gmail ({e}).")
+    if reply.status_code >= 400:
+        try:
+            detail = reply.json().get("error", {}).get("message", "")
+        except ValueError:
+            detail = reply.text[:200]
+        raise GoogleError(f"Gmail said no ({reply.status_code}): {detail}")
+    return reply.json() if reply.content else {}
 
 
 def _post(session, url, body):

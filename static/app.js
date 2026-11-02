@@ -1368,6 +1368,9 @@ const SET_KEYS = [  // the other connections, whatever the AI engine
 ];
 const GOOGLE_TEXT = { connected: "Connected: reminders also go to your phone",
                       signed_out: "Not connected", not_setup: "Needs google_client.json in %LOCALAPPDATA%\\Aura (see README)" };
+const GMAIL_TEXT = { connected: "Connected: Aura reads, sends, archives, labels and trashes mail you ask about",
+                     signed_out: "Not connected: lets Aura manage your Gmail (no App Password needed)",
+                     not_setup: GOOGLE_TEXT.not_setup };
 
 function setInput(key, type, value, placeholder) {
   const input = el("input", "set-input");
@@ -1416,7 +1419,8 @@ function drawSettings(s) {
 
   // Email
   const mailOk = s.email && saved("GMAIL_APP_PASSWORD");
-  const mail = setSection("mail", "Email", mailOk ? "Sending and reading as " + s.email : "Not set up: Mailer and Inbox need this");
+  const mail = setSection("mail", "Email", s.gmail === "connected" ? "Using Connect Gmail (Connections below)"
+    : mailOk ? "Sending and reading as " + s.email : "Not set up: Connect Gmail below, or add an App Password");
   const pair = el("div", "set-pair");
   pair.append(
     setField("Gmail address", setInput("GMAIL_ADDRESS", "email", s.email, "you@gmail.com")),
@@ -1431,18 +1435,25 @@ function drawSettings(s) {
   // Connections
   const conn = setSection("lock", "Connections", "Paste a new key to replace the saved one");
   SET_KEYS.forEach((k) => conn.appendChild(keyRow(s, ...k)));
-  const google = setButton(s.google === "connected" ? "Disconnect" : "Connect", async () => {
-    $("setError").textContent = "";
-    if (s.google === "connected") return drawSettings(await api().google_disconnect());
-    google.disabled = true;
-    google.textContent = "Finish signing in in your browser…";
-    const r = await api().google_connect();
-    if (r.error) { $("setError").textContent = r.error; google.disabled = false; google.textContent = "Connect"; return; }
-    toast("Connected to Google");
-    drawSettings(r);
-  });
-  google.hidden = s.google === "not_setup";
-  conn.appendChild(setRow("clock", "Google Tasks & Calendar", GOOGLE_TEXT[s.google], s.google === "connected", google));
+  // Google Tasks & Calendar, and Gmail: two separate sign-ins (Gmail is a bigger permission)
+  const signIn = (key, done) => {
+    const b = setButton(s[key] === "connected" ? "Disconnect" : "Connect", async () => {
+      $("setError").textContent = "";
+      if (s[key] === "connected") return drawSettings(await api()[key + "_disconnect"]());
+      b.disabled = true;
+      b.textContent = "Finish signing in in your browser…";
+      const r = await api()[key + "_connect"]();
+      if (r.error) { $("setError").textContent = r.error; b.disabled = false; b.textContent = "Connect"; return; }
+      toast(done);
+      drawSettings(r);
+    });
+    b.hidden = s[key] === "not_setup";
+    return b;
+  };
+  conn.appendChild(setRow("clock", "Google Tasks & Calendar", GOOGLE_TEXT[s.google], s.google === "connected",
+                          signIn("google", "Connected to Google")));
+  conn.appendChild(setRow("mail", "Gmail", GMAIL_TEXT[s.gmail], s.gmail === "connected",
+                          signIn("gmail", "Gmail connected")));
   const people = s.contacts < 0 ? "contacts.json has a mistake: open it to fix"
                : `${s.contacts} saved contact${s.contacts === 1 ? "" : "s"} · uses WhatsApp on this PC`;
   const importTxt = setButton("Import .txt", async () => {

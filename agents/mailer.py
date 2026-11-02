@@ -1,8 +1,9 @@
 """
 agents/mailer.py - The Mailer agent.
 
-Sends the last email the Writer wrote, from your Gmail account,
-using Gmail's SMTP server and a Gmail "App Password" from .env.
+Sends the last email the Writer wrote, from your Gmail account:
+through the Gmail API when you clicked "Connect Gmail" in Settings,
+else Gmail's SMTP server with a Gmail "App Password" from .env.
 
 SAFETY DESIGN (sending cannot be undone, so it is strict):
   - No AI model here. Plain Python decides everything, so a model
@@ -13,9 +14,11 @@ SAFETY DESIGN (sending cannot be undone, so it is strict):
     (read from Gmail by Python), and stay in the same Gmail thread.
   - It only sends the email the Writer saved in THIS request.
   - It refuses if the draft still has blanks like [Your Name].
+  - It asks you first (state["confirm"]: a Yes/No box in the desktop app) and sends only on Yes.
   - At most MAX_RECIPIENTS addresses. Nothing is sent in test (dry run) mode.
 """
 
+import base64
 import os
 import re
 import ssl
@@ -24,6 +27,7 @@ import time
 from email.message import EmailMessage
 
 import config
+import google_sync
 
 EMAIL_PATTERN = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 PLACEHOLDER_PATTERN = re.compile(r"\[[^\]\n]{2,40}\]")  # e.g. [Your Name]
@@ -67,7 +71,8 @@ def run_mailer(task, state):
     1) pick recipients  2) run the safety checks  3) send with Gmail SMTP
     """
     start = time.time()
-    sender = config.GMAIL_ADDRESS
+    use_api = google_sync.gmail_connected() and not state.get("dry_run")
+    sender = google_sync.gmail("GET", "profile")["emailAddress"].lower() if use_api else config.GMAIL_ADDRESS
 
     # 1. Recipients: in the task AND typed by the user, never our own address
     typed_by_user = find_emails(state.get("request", ""))
@@ -97,9 +102,11 @@ def run_mailer(task, state):
     if state.get("dry_run"):  # test mode: never send
         return make_result("send_email", to_text, f"[dry run] Would send '{subject}' to {to_text}", start)
 
-    if not sender or not config.GMAIL_APP_PASSWORD:
-        raise ValueError("Email sending is not set up. Add GMAIL_ADDRESS and GMAIL_APP_PASSWORD "
-                         "to your .env file (see README).")
+    if not use_api and (not sender or not config.GMAIL_APP_PASSWORD):
+        raise ValueError("Email sending is not set up. Click Connect Gmail in Settings, or add your "
+                         "Gmail address and an App Password there.")
+    if state.get("confirm") and not state["confirm"]("email", to_text, f"Subject: {subject}\n\n{body}"):
+        return refuse("you chose not to send it.", start)
 
     # 3. Send through Gmail (SSL connection, logged in with the App Password)
     message = EmailMessage()
@@ -116,6 +123,12 @@ def run_mailer(task, state):
             message["In-Reply-To"] = original["message_id"]
             message["References"] = original["message_id"]
     message.set_content(body)
+    if use_api:
+        sent = {"raw": base64.urlsafe_b64encode(message.as_bytes()).decode()}
+        if original and recipients == [original["from_address"]] and original.get("thread_id"):
+            sent["threadId"] = original["thread_id"]  # same Gmail thread
+        google_sync.gmail("POST", "messages/send", json=sent)
+        return make_result("send_email", to_text, f"Sent '{message['Subject']}' from {sender} to {to_text}", start)
     with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=config.API_TIMEOUT_SECONDS,
                           context=ssl.create_default_context()) as server:  # checks Gmail's certificate
         server.login(sender, config.GMAIL_APP_PASSWORD)

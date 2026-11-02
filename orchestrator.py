@@ -98,7 +98,8 @@ Agents:
             or the last file the writer saved.
 - "mailer": sends the last email the writer wrote to the email address(es) the user typed,
             or replies to the email the inbox agent found.
-- "inbox": reads and searches the user's Gmail inbox and summarises emails (read-only).
+- "inbox": reads, searches and summarises the user's Gmail inbox, and can archive, delete (trash),
+           mark read/unread, star or label the emails it finds.
 - "news": today's news briefing (tech, finance, India, world, science, health, sports, entertainment,
           or news about a named subject) and live stock market prices with charts (indices or named stocks).
 - "files": searches the user's own folders (Desktop, Documents, Downloads, Pictures, Music, Videos)
@@ -176,6 +177,8 @@ Rules:
   "Search X and save it to Notion" = a web step, then a notion step "save the last answer to <page>".
   Only "open Notion" (nothing to read or save) is a system step.
 - To read, check, search or summarise emails, use ONE inbox step, e.g. "summarise my 5 latest unread emails".
+- To archive, delete, mark read/unread, star or label emails, use ONE inbox step that says which emails
+  and what to do, e.g. "archive the 5 latest emails from amazon", "label emails from monika as College".
 - To REPLY to an email: an inbox step that finds it (e.g. "find the latest email from monika"),
   then a writer step "write a reply saying ... (this email will be sent)", then a mailer step "send the reply".
 - For news, headlines, "what's happening", stock market, share prices or indices, use ONE news step.
@@ -281,7 +284,8 @@ def make_plan(user_text, memory=None, attachment=None, web=False, only=None):
     return steps[:config.MAX_STEPS], reply
 
 
-def run_request(user_text, dry_run=False, memory=None, attachment=None, web=False, automated=False, agent=None):
+def run_request(user_text, dry_run=False, memory=None, attachment=None, web=False, automated=False, agent=None,
+                confirm=None):
     """
     Run one user request from start to finish, yielding events.
     Every step (planning + each agent) is saved to logs/run_log.jsonl.
@@ -298,6 +302,8 @@ def run_request(user_text, dry_run=False, memory=None, attachment=None, web=Fals
     web=True: the user turned on "Web search" in the + menu, so the plan always searches.
     automated=True: a routine started this request (automations.py), so it may not
     save new automations (a routine can never multiply itself).
+    confirm: confirm(kind, to, text) -> True to send. The Mailer and WhatsApp agents ask it
+    right before sending (kind is "email" or "whatsapp"); None = no question.
     agent: the agent the user clicked in the sidebar ("talk to Music"): only that agent runs.
     A plan that needs a switched-off agent (agents_off) runs nothing and says why.
 
@@ -325,7 +331,7 @@ def run_request(user_text, dry_run=False, memory=None, attachment=None, web=Fals
     state = {"last_file": None, "last_type": None, "request": request, "reply_to": None,
              "last_answer": None, "dry_run": dry_run, "previous": dict(memory or {}),
              "attachment": attachment, "history": list((memory or {}).get("history", [])),
-             "user_name": config.USER_NAME}
+             "user_name": config.USER_NAME, "confirm": confirm}
     request_id = uuid.uuid4().hex[:8]  # groups all log lines of one request
 
     # ---- 1. Plan ----

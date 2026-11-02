@@ -26,5 +26,6 @@ build/
 # Google sign-in (phone reminders)
 google_client.json
 google_token.json
+gmail_token.json
 focus_dnd.mark
 cli_work/

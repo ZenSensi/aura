@@ -2,7 +2,9 @@
 agents/inbox.py - The Inbox agent.
 
 Reads and searches your Gmail inbox, and summarises what it finds.
-Uses Gmail's IMAP server with the same App Password as the Mailer.
+With "Connect Gmail" (Settings) it uses the Gmail API and can also manage emails:
+archive, move to Trash, mark read/unread, star, label. Without it, it only reads,
+through Gmail's IMAP server with the App Password (like the Mailer).
 
 How it works:
   1) The model turns the task into a small JSON "search plan"
@@ -15,7 +17,10 @@ How it works:
      Writer + Mailer step can reply to it.
 
 SAFETY:
-  - Read-only: this agent can never delete, move or change an email.
+  - Searching is read-only (emails stay unread).
+  - Changes need Connect Gmail and only touch the emails the search found (max 10).
+    Trash is the most it can do (Gmail keeps Trash 30 days): it never deletes forever
+    or forwards. The plan comes from your task, never from an email's text.
   - Email text is only summarised. Any instructions written inside an
     email are ignored, and who gets a reply is decided by Python
     (the real sender's address), never by the model.
@@ -31,15 +36,25 @@ from html.parser import HTMLParser
 from email.header import decode_header, make_header
 from email.utils import parseaddr, parsedate_to_datetime
 
+import base64
+
 import config
+import google_sync
 from llm import call_llm_json
 
 EMAIL_RE = re.compile(r"[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}")
 MAX_EMAILS = 10        # never read more than this many emails at once
 BODY_CHARS = 1500      # how much of each email the models may see
 
-PLAN_PROMPT = """You are the Inbox agent of a desktop assistant. You can READ and SEARCH the user's Gmail inbox.
-Turn the task into a search plan.
+# action -> (Gmail labels added, labels removed); "trash" and "label" are done separately
+CHANGES = {"archive": ([], ["INBOX"]), "mark_read": ([], ["UNREAD"]), "mark_unread": (["UNREAD"], []),
+           "star": (["STARRED"], []), "unstar": ([], ["STARRED"]), "trash": None, "label": None}
+DONE_WORDS = {"archive": "Archived", "mark_read": "Marked as read", "mark_unread": "Marked as unread",
+              "star": "Starred", "unstar": "Unstarred", "trash": "Moved to Trash", "label": "Labelled"}
+
+PLAN_PROMPT = """You are the Inbox agent of a desktop assistant. You can READ and SEARCH the user's Gmail inbox,
+and change the emails a search finds (archive, trash, mark read/unread, star, label).
+Turn the task into a plan: the search that finds the emails, then what to do with them.
 
 Fields:
 - "unread_only": true if the user wants unread/new emails, else false
@@ -47,10 +62,12 @@ Fields:
 - "subject": words that must be in the subject, or ""
 - "text": words that must be anywhere in the email, or ""
 - "limit": how many emails (1-10). "latest email" = 1. Default 5.
-- "action": "search", or "refuse" if the task asks to delete, move, forward or change emails.
+- "action": "search" to read/find/summarise; "archive", "trash" (delete / bin), "mark_read", "mark_unread",
+  "star", "unstar" or "label" to change the emails found; "refuse" to forward or delete forever.
+- "label": the label name for "label", else "".
 
 Reply with ONLY this JSON, nothing else:
-{"action": "search" | "refuse", "unread_only": false, "from": "", "subject": "", "text": "", "limit": 5}"""
+{"action": "search", "unread_only": false, "from": "", "subject": "", "text": "", "limit": 5, "label": ""}"""
 
 SUMMARY_PROMPT = """You summarise emails for a busy college student.
 You get a task and a list of emails. Answer the task in 1-4 short sentences.
@@ -73,8 +90,13 @@ def clean_plan(data):
         limit = int(data.get("limit", 5))
     except (TypeError, ValueError):
         limit = 5
+    action = data.get("action")
+    label = re.sub(r"[\x00-\x1f]", "", str(data.get("label") or "")).strip()[:50]
+    if action == "label" and not label:
+        action = "refuse"
     return {
-        "action": "refuse" if data.get("action") == "refuse" else "search",
+        "action": action if action in CHANGES or action == "refuse" else "search",
+        "label": label,
         "unread_only": data.get("unread_only") is True,
         "from": str(data.get("from") or "").strip(),
         "subject": str(data.get("subject") or "").strip(),
@@ -149,8 +171,63 @@ def html_to_text(html):
     return " ".join(" ".join(parser.parts).split())
 
 
+def to_email(message, unread, **extra):
+    """One parsed email -> the dict the agents use (sender, subject, date, text...)."""
+    name, address = parseaddr(decode(message.get("From")))
+    try:
+        date = parsedate_to_datetime(message.get("Date")).astimezone().strftime("%d %b %Y, %I:%M %p")  # your local time
+    except (TypeError, ValueError):
+        date = ""
+    text = " ".join(body_text(message).split())  # squash spaces and new lines
+    return {"from_name": name or address, "from_address": address.lower(),
+            "subject": decode(message.get("Subject")) or "(no subject)", "date": date, "unread": unread,
+            "snippet": text[:200], "body": text[:BODY_CHARS], "message_id": message.get("Message-ID", ""), **extra}
+
+
+def gmail_query(plan):
+    """The plan as a Gmail search, e.g. 'in:inbox is:unread from:"monika"'."""
+    words = ["in:inbox"] + (["is:unread"] if plan["unread_only"] else [])
+    for key, prefix in (("from", "from:"), ("subject", "subject:"), ("text", "")):
+        quoted = imap_quote(plan[key])  # plain text in quotes: can't add Gmail search operators
+        if quoted:
+            words.append(prefix + quoted)
+    return " ".join(words)
+
+
+def fetch_gmail(plan):
+    """The newest matching emails through the Gmail API (Connect Gmail). Reading doesn't mark them read."""
+    found = google_sync.gmail("GET", "messages", params={"q": gmail_query(plan), "maxResults": plan["limit"]})
+    emails = []
+    for item in found.get("messages", [])[:plan["limit"]]:  # newest first
+        full = google_sync.gmail("GET", f"messages/{item['id']}", params={"format": "raw"})
+        message = email.message_from_bytes(base64.urlsafe_b64decode(full["raw"]))
+        emails.append(to_email(message, "UNREAD" in full.get("labelIds", []),
+                               id=full["id"], thread_id=full.get("threadId", "")))
+    return emails
+
+
+def change_emails(plan, emails):
+    """Apply the plan's action to the emails the search found (Gmail API)."""
+    ids = [e["id"] for e in emails]
+    if plan["action"] == "trash":
+        for message_id in ids:
+            google_sync.gmail("POST", f"messages/{message_id}/trash")
+        return
+    if plan["action"] == "label":
+        labels = google_sync.gmail("GET", "labels").get("labels", [])
+        label = next((l for l in labels if l["name"].lower() == plan["label"].lower()), None)
+        label = label or google_sync.gmail("POST", "labels", json={"name": plan["label"]})  # new label
+        add, remove = [label["id"]], []
+    else:
+        add, remove = CHANGES[plan["action"]]
+    google_sync.gmail("POST", "messages/batchModify", json={"ids": ids, "addLabelIds": add, "removeLabelIds": remove})
+
+
 def fetch_emails(plan):
-    """Log in to Gmail, search, and return the newest matching emails (read-only)."""
+    """Search Gmail and return the newest matching emails (read-only): the Gmail API when
+    Gmail is connected, else IMAP with the App Password."""
+    if google_sync.gmail_connected():
+        return fetch_gmail(plan)
     if not config.GMAIL_ADDRESS or not config.GMAIL_APP_PASSWORD:
         raise ValueError("Gmail is not set up. Add GMAIL_ADDRESS and GMAIL_APP_PASSWORD to your .env file.")
 
@@ -168,23 +245,7 @@ def fetch_emails(plan):
         for number in reversed(numbers):                # newest first
             _, parts = imap.fetch(number, "(FLAGS BODY.PEEK[])")  # PEEK = do not mark as read
             flags = parts[0][0].decode(errors="replace")
-            message = email.message_from_bytes(parts[0][1])
-            name, address = parseaddr(decode(message.get("From")))
-            try:
-                date = parsedate_to_datetime(message.get("Date")).astimezone().strftime("%d %b %Y, %I:%M %p")  # your local time
-            except (TypeError, ValueError):
-                date = ""
-            text = " ".join(body_text(message).split())  # squash spaces and new lines
-            emails.append({
-                "from_name": name or address,
-                "from_address": address.lower(),
-                "subject": decode(message.get("Subject")) or "(no subject)",
-                "date": date,
-                "unread": "\\Seen" not in flags,
-                "snippet": text[:200],
-                "body": text[:BODY_CHARS],
-                "message_id": message.get("Message-ID", ""),
-            })
+            emails.append(to_email(email.message_from_bytes(parts[0][1]), "\\Seen" not in flags))
     return emails
 
 
@@ -201,12 +262,26 @@ def run_inbox(task, state):
     if plan["action"] == "refuse":
         return {**info, "seconds": round(time.time() - start, 2), "emails": [], "summary": "",
                 "action": {"action": "refuse", "target": ""},
-                "message": "Refused: I can only read and search emails, not delete, move or change them."}
+                "message": "Refused: I can't forward emails or delete them forever."}
+    changing = plan["action"] != "search"
+    if changing and not google_sync.gmail_connected():
+        return {**info, "seconds": round(time.time() - start, 2), "emails": [], "summary": "",
+                "action": {"action": "refuse", "target": ""},
+                "message": "Not changed: to archive, delete or label emails, click Connect Gmail in Settings first."}
 
     emails = fetch_emails(plan)
     if not emails:
         return {**info, "seconds": round(time.time() - start, 2), "emails": [], "summary": "",
-                "action": {"action": "search", "target": ""}, "message": "No emails matched your search."}
+                "action": {"action": plan["action"], "target": ""}, "message": "No emails matched your search."}
+    shown = [{k: e[k] for k in ("from_name", "from_address", "subject", "date", "unread", "snippet")} for e in emails]
+
+    if changing:
+        change_emails(plan, emails)
+        done = DONE_WORDS[plan["action"]] + (f" '{plan['label']}'" if plan["action"] == "label" else "")
+        subjects = "; ".join(e["subject"] for e in emails[:5]) + ("…" if len(emails) > 5 else "")
+        return {**info, "seconds": round(time.time() - start, 2), "emails": shown, "summary": "",
+                "action": {"action": plan["action"], "target": str(len(emails))},
+                "message": f"{done}: {len(emails)} email{'s' if len(emails) != 1 else ''} ({subjects})."}
 
     # Remember the newest email so a reply can be written and sent to its sender
     state["reply_to"] = emails[0]
@@ -226,8 +301,7 @@ def run_inbox(task, state):
         **info,
         "fallback_used": info["fallback_used"] or summary_reply["fallback_used"],
         "seconds": round(time.time() - start, 2),
-        "emails": [{k: e[k] for k in ("from_name", "from_address", "subject", "date", "unread", "snippet")}
-                   for e in emails],
+        "emails": shown,
         "summary": summary,
         "action": {"action": "search", "target": str(len(emails))},
         "message": f"Found {len(emails)} email{'s' if len(emails) != 1 else ''}. {summary}",
