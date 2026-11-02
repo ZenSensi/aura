@@ -1,0 +1,97 @@
+/* =========================================================
+   Aura "task done" notification (notify.py, notify.js).
+   Same frosted glass and smooth-edge trick as the dock (dock.css):
+   --glass  = live blurred picture of the screen behind the card,
+   --behind = the same picture sharp, filling the 2px ring between the
+              window region (jagged) and the card's smooth rounded edge.
+   ========================================================= */
+
+html {
+  --glass: none;
+  --behind: none;
+  height: 100%; overflow: hidden;
+  background: var(--behind) 0 0 / 100% 100% no-repeat, transparent;
+}
+body.notify-body { margin: 0; height: 100%; color: var(--text); font-family: var(--font); background: transparent; }
+
+.card {
+  --ease: cubic-bezier(.32, .72, 0, 1);
+  --kc: var(--ok);                        /* colour of this kind (ok / warn / error / info) */
+  position: absolute; top: 2px; left: 2px; right: 2px;   /* 2px ring all round */
+  box-sizing: border-box; padding: 12px 14px 14px; border-radius: 18px; overflow: hidden;
+  cursor: pointer;
+  background:
+    linear-gradient(rgba(255, 255, 255, .16), rgba(255, 255, 255, .04) 55%, rgba(255, 255, 255, .02)),
+    linear-gradient(rgba(18, 18, 28, .22), rgba(18, 18, 28, .22)),
+    var(--glass) 0 0 / 100vw 100vh no-repeat fixed,
+    rgba(40, 40, 52, 1);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, .22),          /* thin bright glass edge */
+    inset 0 1px 0 rgba(255, 255, 255, .35);            /* light catching the top edge */
+  /* Hidden: off to the right. The window region is already the card's size, and
+     the sharp --behind picture fills it, so the empty space can't be seen. */
+  transform: translateX(calc(100% + 8px)); opacity: .4;
+  transition: transform .5s var(--ease), opacity .35s ease;
+}
+.card.show { transform: none; opacity: 1; }
+.card.leaving { transform: translateX(calc(100% + 8px)); opacity: 0; transition-duration: .4s, .3s; }
+.card.ok    { --kc: var(--ok); }
+.card.warn  { --kc: var(--warn); }
+.card.error { --kc: var(--err); }
+.card.info  { --kc: var(--accent-2); }
+.card.remind { --kc: var(--automate); }
+
+.card-top { display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: rgba(255, 255, 255, .7); }
+.card-logo { width: 16px; height: 16px; border-radius: 50%; }
+.card-app { font-weight: 600; letter-spacing: .02em; }
+.card-time::before { content: "·"; margin-right: 7px; }
+.card-close {
+  margin-left: auto; width: 22px; height: 22px; border-radius: 7px; padding: 0;
+  display: grid; place-items: center; border: none; background: transparent;
+  color: rgba(255, 255, 255, .6); cursor: pointer; opacity: 0; transition: opacity .2s, background .2s;
+}
+.card:hover .card-close { opacity: 1; }
+.card-close:hover { background: rgba(255, 255, 255, .12); color: #fff; }
+
+.card-main { display: flex; gap: 11px; align-items: flex-start; margin-top: 9px; }
+.card-icon {
+  width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0; display: grid; place-items: center;
+  color: var(--kc); background: color-mix(in srgb, var(--kc) 18%, transparent);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--kc) 30%, transparent);
+}
+.card.show .card-icon { animation: pop .5s cubic-bezier(.34, 1.56, .64, 1) .15s backwards; }
+@keyframes pop { from { transform: scale(.4); opacity: 0; } }
+.card-text { flex: 1; min-width: 0; }
+.card-title {
+  font-size: 13.5px; font-weight: 600; color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, .35);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.card-msg {
+  margin-top: 3px; font-size: 12.5px; line-height: 1.45; color: rgba(255, 255, 255, .82);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .3);
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+
+/* Snooze / Done on reminders */
+.card-actions { display: flex; gap: 8px; margin: 11px 0 0 41px; }
+.card-actions[hidden] { display: none; }
+.card-btn {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; border-radius: 9px;
+  font: 600 12px var(--font); color: #fff; cursor: pointer;
+  background: rgba(255, 255, 255, .12); border: 1px solid rgba(255, 255, 255, .18);
+  transition: background .2s;
+}
+.card-btn:hover { background: rgba(255, 255, 255, .22); }
+
+/* A thin bar that runs out until the card hides itself (pauses while hovered) */
+.card-timer {
+  position: absolute; left: 0; bottom: 0; height: 2px; width: 100%;
+  background: color-mix(in srgb, var(--kc) 70%, transparent); transform-origin: left;
+}
+.card.show .card-timer { animation: run-out var(--life, 6s) linear forwards; }
+.card:hover .card-timer { animation-play-state: paused; }
+@keyframes run-out { to { transform: scaleX(0); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .card, .card.leaving { transition: opacity .2s; transform: none; }
+}
