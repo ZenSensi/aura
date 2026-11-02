@@ -210,6 +210,7 @@ class Dock:
         self.timer = None                     # notch focus timer: {"end": epoch ms, "total": ms} or None
         self._timer_run = 0
         self._flash_run = 0
+        self._flash_last = {}                 # end script -> newest flash that uses it
         self._flash_opened = False            # a HUD / banner showed the notch, so it hides it again
         # Notch-only watchers, started once the page is ready (see _watch)
         self.hud = Hud(self._on_hud)          # volume / brightness bars
@@ -550,16 +551,20 @@ class Dock:
             return
         self._flash_run += 1
         run = self._flash_run
+        self._flash_last[end_script] = run
         if not self.visible:
             self._flash_opened = True
             self.show(wait=0)
         self.window.evaluate_js(script)
 
         def end():
-            if run != self._flash_run:
-                return  # a newer one is showing
             try:
-                self.window.evaluate_js(end_script)
+                # Clear this kind (HUD / banner) unless a newer one of the same kind replaced it;
+                # a banner arriving during the HUD must not leave the HUD stuck on.
+                if self._flash_last.get(end_script) == run:
+                    self.window.evaluate_js(end_script)
+                if run != self._flash_run:
+                    return  # a newer flash is still showing; it hides the notch when done
                 if self._flash_opened and not self.expanded:
                     self._flash_opened = False
                     if not (self.main_minimized and not self.autohide):  # it normally isn't on screen now
