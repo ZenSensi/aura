@@ -40,7 +40,17 @@ SKIP_DIRS = {"node_modules", ".git", "__pycache__", "venv", ".venv", "appdata", 
 # Opening these would RUN a program, so the UI only offers "Show in folder" for them
 RUNNABLE = {".exe", ".bat", ".cmd", ".ps1", ".psm1", ".vbs", ".vbe", ".js", ".jse", ".wsf", ".wsh", ".hta", ".msi",
             ".msix", ".msc", ".cpl", ".lnk", ".pif", ".url", ".scf", ".reg", ".scr", ".com", ".jar", ".py", ".chm",
-            ".appx", ".appref-ms", ".application", ".appinstaller", ".settingcontent-ms"}
+            ".appx", ".appref-ms", ".application", ".appinstaller", ".settingcontent-ms",
+            # also run code or mount/install things when opened (scripts, installers, disk images, search/library
+            # links that can point at remote folders, Excel add-ins, certificates, help and theme files)
+            ".pyw", ".pyz", ".vb", ".ws", ".wsc", ".sct", ".msp", ".mst", ".msh", ".msh1", ".msh2", ".mshxml",
+            ".ps1xml", ".ps2", ".psc1", ".psd1", ".gadget", ".xbap", ".jnlp", ".inf", ".ins", ".isp",
+            ".library-ms", ".search-ms", ".searchconnector-ms", ".diagcab", ".iso", ".img", ".vhd", ".vhdx",
+            ".xll", ".xla", ".xlam", ".ppam", ".cer", ".crt", ".der", ".p7b", ".hlp", ".theme", ".themepack",
+            ".deskthemepack", ".appxbundle", ".msixbundle", ".wim", ".appcontent-ms", ".bas", ".msu", ".ppkg",
+            ".udl", ".website", ".grp", ".ocx", ".pssc", ".cdxml", ".prf", ".sh", ".bash", ".ksh", ".zsh",
+            ".pl", ".rb", ".lua", ".cjs", ".mjs", ".php"}
+# shortcut: a hand-made list (Windows' AssocIsDangerous also flags .txt / .csv here); add new types as they appear
 
 PLAN_PROMPT = f"""You are the Files agent of a desktop assistant. You SEARCH for files on the user's computer.
 Turn the task into a search plan.

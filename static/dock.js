@@ -77,14 +77,25 @@ function contentHeight() {
   return Math.max(MIN_H, Math.min(MAX_H, Math.ceil(h)));
 }
 // Sizes are the body's; Python's cut-out also includes the ring around it
-const shapeTo = (w, h) => api().dock_shape(w + 2 * RING, h + 2 * RING, RADIUS + RING);
-// The notch is a little bigger than the pill (dock.css, NOTCH in dock.py)
-const pillSize = () => document.documentElement.dataset.style === "notch" ? [360, 46] : [PILL_W, PILL_H];
+// seq: Python handles these calls on separate threads, so they can arrive out of order; it ignores older ones
+let shapeSeq = 0;
+const shapeTo = (w, h) => api().dock_shape(w + 2 * RING, h + 2 * RING, RADIUS + RING, shapeSeq = Math.max(shapeSeq + 1, Date.now()));
+// The notch is a little bigger than the pill (dock.css, NOTCH in dock.py); resting (just the eyes) it is narrow
+const isNotch = () => document.documentElement.dataset.style === "notch";
+const isRest = () => !["media", "busy", "timing", "hud"].some((c) => document.body.classList.contains(c));
+const pillSize = () => isNotch() ? [isRest() ? 200 : 360, 46] : [PILL_W, PILL_H];
+// After media / busy / timer / HUD change: the closed notch grows or shrinks to fit (body.rest in dock.css)
+function refit() {
+  const body = document.body;
+  body.classList.toggle("rest", isRest());
+  if (isNotch() && !body.classList.contains("open") && !body.classList.contains("has-banner")) shapeTo(...pillSize());
+}
 
 // instant=true (Python, when the dock appears): no animation
 async function setDockMode(mode, instant = false) {
   const body = document.body;
   body.classList.toggle("instant", instant);
+  body.classList.toggle("rest", isRest());
   if (mode === "open") {
     if (document.documentElement.dataset.style === "notch") refreshHome();
     openHeight = contentHeight();
@@ -109,11 +120,44 @@ async function fit() {
   if (Math.abs(h - openHeight) < 2) return;
   openHeight = h;
   await shapeTo(CARD_W, h);
-  document.body.style.setProperty("--open-h", h + "px");
+  if (openHeight === h) document.body.style.setProperty("--open-h", h + "px");  // a newer fit() wins
 }
 $("pill").onclick = async () => { await api().dock_expand(); setDockMode("open"); };
 // Python: the dock's shortcut was pressed (dock.py shortcut)
 function expandDock() { if (!document.body.classList.contains("open")) $("pill").click(); }
+// Voice shortcut (dock.py _push_to_talk). While the keys are held: a wave in the closed notch / pill
+// (true), then a slower wave while the speech turns into text ("working"), then off (false).
+// Open notch / dock: the mic button turns red (listening) and then blinks (working) instead of the wave.
+let voiceHint = null;  // the box's own placeholder while the shortcut shows its hints there
+function setListening(state) {
+  const body = document.body, open = body.classList.contains("open"), mic = $("dockMic");
+  body.classList.toggle("listening", !!state);
+  body.classList.toggle("transcribing", state === "working");
+  mic.classList.toggle("listening", open && state === true);
+  mic.classList.toggle("working", open && state === "working");
+  if (open && state) {
+    if (voiceHint === null) voiceHint = input.placeholder;
+    input.placeholder = state === true ? "Listening… let go of the keys when you're done" : "Turning speech into text…";
+  } else if (voiceHint !== null) {
+    input.placeholder = voiceHint;
+    voiceHint = null;
+  }
+}
+// Then the dock opens with what was said in its box (or why not), for you to check and press Enter
+async function voiceDone(text, error) {
+  setListening(false);
+  await api().dock_expand();  // brings the dock to the front, so Enter reaches it
+  if (!document.body.classList.contains("open")) await setDockMode("open");
+  if (error) {
+    const before = input.placeholder;
+    input.placeholder = error;
+    setTimeout(() => { if (input.placeholder === error) input.placeholder = before; }, 4000);
+    return;
+  }
+  input.value = ((input.value && !/\s$/.test(input.value) ? input.value + " " : input.value) + text).slice(0, input.maxLength > 0 ? input.maxLength : 1000);
+  input.focus();
+  input.setSelectionRange(input.value.length, input.value.length);
+}
 function collapseDock() { if (document.body.classList.contains("open")) $("dockClose").click(); }
 // Python: which corner / edge of the screen the dock is in, e.g. "bottom-left", and its style
 // ("dock" or "notch"); dock.css lines it up
@@ -133,10 +177,12 @@ $("dockForm").addEventListener("submit", async (e) => {
   const text = input.value.trim();
   if (!text) return;
   startRun(text);
+  const run = current;  // a "done" event during the await can set current to null
   input.value = "";
   if (!(await api().dock_run(text))) {
-    current.box.appendChild(final("warn", "Aura is busy with another task. Try again in a moment.", "var(--warn)"));
-    current = null;
+    run.box.appendChild(final("warn", "Aura is busy with another task. Try again in a moment.", "var(--warn)"));
+    if (current === run) current = null;
+    setBusy(false);  // else the send button stays disabled
     fit();
   }
 });
@@ -292,6 +338,7 @@ function onDockEvent(ev) {
 
 function setBusy(on) {
   document.body.classList.toggle("busy", on);
+  refit();
   $("pillText").textContent = on ? "Aura is working…" : "Ask Aura anything…";
   $("dockSend").disabled = on;
 }
@@ -350,6 +397,7 @@ function setMedia(info) {
   if (shown !== media.shown) {
     media.shown = shown;
     body.classList.toggle("media", shown);
+    refit();
     if (!shown) $("pill").title = "Ask Aura";
     fit();  // the open card grows or shrinks for the Now Playing card
     if (shown) requestAnimationFrame(tick);
@@ -504,6 +552,7 @@ $("timerPresets").appendChild(stopBtn);
 function setTimer(t) {
   timer = t && t.end > Date.now() ? t : null;
   document.body.classList.toggle("timing", !!timer);
+  refit();
   stopBtn.hidden = !timer;
   clearInterval(timerTick);
   drawTimer();
@@ -524,13 +573,13 @@ function drawTimer() {
 
 /* ---------- Volume / brightness HUD ---------- */
 function setHud(kind, percent, muted) {
-  if (!kind) { document.body.classList.remove("hud"); return; }
+  if (!kind) { document.body.classList.remove("hud"); refit(); return; }
   const name = kind === "brightness" ? "sun" : muted || !percent ? "volumeOff" : "volume";
   const box = $("hudIcon");
   if (box.dataset.shows !== name) { box.replaceChildren(icon(name, 16)); box.dataset.shows = name; }
   $("hudBar").style.width = `${muted ? 0 : percent}%`;
   $("hudPct").textContent = muted ? "Muted" : `${percent}%`;
-  document.body.classList.add("hud");
+  if (!document.body.classList.contains("hud")) { document.body.classList.add("hud"); refit(); }
 }
 
 /* ---------- Banner: notifications in the closed notch (Python: dock.banner) ---------- */
@@ -541,13 +590,15 @@ const BANNER_LOOK = {
   bluetooth: ["bluetooth", "#4c9aff"], clip: ["clipboard", "#c084fc"], ai: ["sparkles", "#f5a524"],
 };
 let bannerInfo = null;
+let bannerRun = 0;  // newest showBanner call: an older one still growing must not show afterwards
 
 async function showBanner(info) {
   const body = document.body;
+  const run = ++bannerRun;
   if (!info) {
-    if (!body.classList.contains("has-banner")) return;
-    body.classList.remove("has-banner");
     bannerInfo = null;
+    body.classList.remove("has-banner");
+    // (also when it was still growing: its cut must shrink back too)
     if (!body.classList.contains("open")) shapeTo(...pillSize());  // Python waits for the shrink
     return;
   }
@@ -561,6 +612,7 @@ async function showBanner(info) {
   $("bannerText").textContent = info.text || "";
   $("bannerSnooze").hidden = !info.snooze;
   await shapeTo(...BANNER);  // cut big enough first, then grow
+  if (run !== bannerRun || body.classList.contains("open")) return;  // dismissed or opened meanwhile
   body.classList.add("has-banner");
 }
 $("bannerSnooze").onclick = (e) => {

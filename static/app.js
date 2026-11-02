@@ -1356,7 +1356,7 @@ $("startupBox").onclick = async (e) => {
    Python never sends keys or passwords here, only whether each one is saved.
    An empty key box keeps the saved key. */
 
-const AI_KEYS = [  // [.env name, label, what it's for, icon]: shown under AI engine > API only
+const AI_KEYS = [  // [.env name, label, what it's for, icon]: shown under AI engine > API first
   ["GROQ_API_KEY", "Groq", "Main AI model for most agents", "zap"],
   ["GROQ_API_KEY_SYSTEM", "Groq (second key)", "Planner, System, Files, Inbox: their own rate limit", "zap"],
   ["GEMINI_API_KEY", "Gemini", "Backup model when Groq is busy", "zap"],
@@ -1513,7 +1513,7 @@ function aiSettings(s) {
   const tools = Object.entries(ai.tools).map(([k, t]) => [k, t.name + (t.installed ? "" : " (not installed)")]);
   sec.appendChild(setRow("zap", "Run Aura on", cli ? "Claude Code, Codex, Antigravity or OpenCode, signed in with your account"
                                                    : "Groq, Gemini and OpenRouter keys", true,
-    setSelect("AI engine", [["api", "API only"], ["cli", "Agents only"]], ai.mode, (v) => setAi({ mode: v }))));
+    setSelect("AI engine", [["api", "API first"], ["cli", "Agents first"]], ai.mode, (v) => setAi({ mode: v }))));
   if (!cli) {
     AI_KEYS.forEach((k) => sec.appendChild(keyRow(s, ...k)));
     return sec;
@@ -1554,6 +1554,28 @@ function shortcutText(e) {
   return mods.length ? [...mods, key].join("+") : "";
 }
 
+// A shortcut button: click, then press the new keys (saved as set_dock({[name]: keys})). Esc cancels.
+function keysButton(current, name, label) {
+  const keys = setButton(current, () => {
+    keys.textContent = "Press the new keys…";
+    keys.classList.add("listening");
+  });
+  keys.onkeydown = async (e) => {
+    if (!keys.classList.contains("listening")) return;
+    e.preventDefault();
+    e.stopPropagation();  // Esc here must not close Settings
+    if (e.key === "Escape") { keys.classList.remove("listening"); keys.textContent = current; return; }
+    const text = shortcutText(e);
+    if (!text) return;  // a modifier on its own: wait for the key
+    keys.classList.remove("listening");
+    keys.textContent = text;
+    const r = await setDock({ [name]: text });
+    if (r) { toast(`${label}: ${text}`); drawSettings(r); } else keys.textContent = current;
+  };
+  keys.onblur = () => { if (keys.classList.contains("listening")) { keys.classList.remove("listening"); keys.textContent = current; } };
+  return keys;
+}
+
 function dockSettings(s) {
   const d = s.dock;
   const sec = setSection("expand", "Dock", "The floating pill you can use from any app");
@@ -1586,24 +1608,7 @@ function dockSettings(s) {
   sec.appendChild(setRow("expand", "Position", where.disabled ? "The notch always sits at the top middle"
                          : "Where on the screen the dock sits", false, where));
 
-  // Click, then press the new keys. Esc cancels.
-  const keys = setButton(d.shortcut, () => {
-    keys.textContent = "Press the new keys…";
-    keys.classList.add("listening");
-  });
-  keys.onkeydown = async (e) => {
-    if (!keys.classList.contains("listening")) return;
-    e.preventDefault();
-    e.stopPropagation();  // Esc here must not close Settings
-    if (e.key === "Escape") { keys.classList.remove("listening"); keys.textContent = d.shortcut; return; }
-    const text = shortcutText(e);
-    if (!text) return;  // a modifier on its own: wait for the key
-    keys.classList.remove("listening");
-    keys.textContent = text;
-    const r = await setDock({ shortcut: text });
-    if (r) { toast(`Dock shortcut: ${text}`); drawSettings(r); } else keys.textContent = d.shortcut;
-  };
-  keys.onblur = () => { if (keys.classList.contains("listening")) { keys.classList.remove("listening"); keys.textContent = d.shortcut; } };
+  const keys = keysButton(d.shortcut, "shortcut", "Dock shortcut");
   const extra = [keys];
   if (d.shortcut !== DEFAULT_SHORTCUT) {  // ` + Space can't be recorded (it is caught before the page sees it)
     extra.unshift(setButton("Reset", async () => {
@@ -1613,6 +1618,10 @@ function dockSettings(s) {
   }
   sec.appendChild(setRow("sparkles", "Shortcut", d.shortcut_ok ? "Opens the dock from any app. Click to change"
                          : "Not working: another app has these keys. Click to pick others", d.shortcut_ok, ...extra));
+  sec.appendChild(setRow("mic", "Voice shortcut", d.voice_ok
+                         ? "Hold to talk, let go to type it in the dock, then Enter to run. Click to change"
+                         : "Not working: another app has these keys. Click to pick others", d.voice_ok,
+                         keysButton(d.voice_shortcut, "voice_shortcut", "Voice shortcut")));
 
   const sw = el("button", "switch");
   sw.type = "button";

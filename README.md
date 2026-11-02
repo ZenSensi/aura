@@ -99,7 +99,7 @@ and a **backup on a different provider**; if both fail, a **last-resort** free m
 | Tutor | `openai/gpt-oss-120b` on Groq, `reasoning_effort: high` | `gemini-3.5-flash` |
 | System | `qwen/qwen3.8-27b` on Groq | `gemini-3.5-flash-lite` |
 | Files | `openai/gpt-oss-20b` on Groq | `gemini-3.5-flash-lite` |
-| Reader (images, scanned PDFs) | `qwen/qwen3.8-27b` on Groq (vision) | none: your photos and scans are never sent to a free backup that keeps logs |
+| Reader (images, scanned PDFs) | `qwen/qwen3.8-27b` on Groq (vision) | never the free OpenRouter backup (it keeps logs); an AI tool you installed (Settings > AI engine) can read them, first in Agents mode or if Groq fails |
 | Voice typing | `whisper-large-v3-turbo` on Groq | — |
 | Every agent except image reading, if main and backup both fail | `openrouter/free` (OpenRouter's free-model router) | — |
 
@@ -197,7 +197,7 @@ Set `VOICE_LANGUAGE` in `config.py` (default `"en"`; e.g. `"hi"` for Hindi).
 | How | Command |
 |:--|:--|
 | **Desktop app from source** (recommended while developing) | `python desktop.py` |
-| **Build a single `Aura.exe`** | `build_exe.bat`, then double-click `Aura.exe` |
+| **Build a single `Aura.exe`** | `build_exe.bat`, then double-click `Aura.exe`. Needs `google_client.json` (a Google *Desktop app* OAuth client) next to it, even if you won't use phone reminders |
 | Terminal only | `python main.py` |
 
 The desktop app opens in its own native window (pywebview) — no browser and no web server. Keep `Aura.exe` in
@@ -242,10 +242,14 @@ the project folder, next to `.env`, `outputs\` and `logs\`.
 
 Actions that can't be undone are guarded by **Python, not by the model**:
 
-- **Email:** sends only to addresses **you typed**, only the email written in the same request, refuses drafts with
+- **Email:** sends only to addresses **you typed** (or, for a reply, to the sender of the email the Inbox found:
+  check who it is from before asking for a reply), only the email written in the same request, refuses drafts with
   blanks like `[Your Name]`, max 3 recipients. The Inbox is opened read-only and never marks mail as read.
 - **WhatsApp:** sends only to a contact you named, from your own `contacts.json`, and presses Enter only if the
   WhatsApp window is in front.
+- **AI tools as the engine** (Claude Code, Codex, Antigravity, OpenCode): started with their tools switched off
+  (no commands, no file edits, no connectors) and without Aura's keys, because emails and web pages they read could
+  hide instructions.
 - **Apps:** the model only picks a name; Python looks up the real command. Apps that can run commands or change the
   system (PowerShell, Command Prompt, Registry Editor, Control Panel, …) are always blocked.
 - **Files:** the Organiser only moves (never deletes) and records every move so it can be undone.

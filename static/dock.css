@@ -68,8 +68,24 @@ body.dock-body {
 html[data-style="notch"] body.dock-body {
   margin-top: 0; background: #000; border-radius: 0 0 20px 20px; box-shadow: none;
 }
+/* Curved shoulders: the notch flows into the screen's top edge (NOTCH_EAR in dock.py cuts room for them).
+   They follow the body's width (pill 360, banner 440) and fade while the card is open. */
+html[data-style="notch"]::before, html[data-style="notch"]::after {
+  content: ""; position: fixed; top: 0; width: 10px; height: 10px; z-index: 1;
+  transition: left .45s cubic-bezier(.32, .72, 0, 1), right .45s cubic-bezier(.32, .72, 0, 1), opacity .2s ease;
+}
+html[data-style="notch"]::before { right: calc(50% + 180px); background: radial-gradient(circle at 0 100%, transparent 9.5px, #000 10px); }
+html[data-style="notch"]::after { left: calc(50% + 180px); background: radial-gradient(circle at 100% 100%, transparent 9.5px, #000 10px); }
+html[data-style="notch"]:has(body.has-banner:not(.open))::before { right: calc(50% + 220px); }
+html[data-style="notch"]:has(body.has-banner:not(.open))::after { left: calc(50% + 220px); }
+html[data-style="notch"]:has(body.rest:not(.open):not(.has-banner))::before { right: calc(50% + 100px); }
+html[data-style="notch"]:has(body.rest:not(.open):not(.has-banner))::after { left: calc(50% + 100px); }
+html[data-style="notch"]:has(body.open)::before, html[data-style="notch"]:has(body.open)::after { opacity: 0; }
+
 /* A little bigger than the pill (NOTCH in dock.py, pillSize in dock.js); :not(.open) so the card keeps its size */
 html[data-style="notch"] body.dock-body:not(.open) { width: 360px; height: 46px; }
+/* Resting (only the eyes: no song, work, timer or HUD): narrow, like a real notch (pillSize in dock.js) */
+html[data-style="notch"] body.dock-body.rest:not(.open):not(.has-banner) { width: 200px; }
 html[data-style="notch"] .pill-btn { width: 360px; height: 46px; margin-left: -180px; padding: 0 22px 0 14px; gap: 12px; }
 html[data-style="notch"] .pill-controls { height: 46px; right: calc(50% - 180px); padding-right: 12px; }
 html[data-style="notch"] .pill-progress { left: 56px; right: 26px; bottom: 4px; }
@@ -398,6 +414,71 @@ html[data-style="notch"] body.media.timing:not(.busy) .pill-chip {
 }
 /* Live activity: Aura working (body.busy) shows the running agent and its task */
 html[data-style="notch"] body.busy .pill-logo { animation: spin 2.4s linear infinite; }
+
+/* Idle notch: a blue-to-purple glow along the bottom and two blinking eyes instead of the logo and text */
+.pill-eyes { display: none; }
+html[data-style="notch"] body.dock-body:not(.open) {
+  background:
+    radial-gradient(60% 100% at 30% 125%, rgba(30, 200, 255, 1), rgba(30, 140, 255, .35) 45%, transparent 75%),
+    radial-gradient(60% 100% at 72% 125%, rgba(150, 90, 255, 1), rgba(110, 70, 255, .35) 45%, transparent 75%),
+    #000;
+}
+html[data-style="notch"] body:not(.media):not(.busy) .pill-logo,
+html[data-style="notch"] body:not(.media):not(.busy) .pill-text,
+html[data-style="notch"] body:not(.media):not(.busy) .pill-dot { display: none; }
+html[data-style="notch"] body:not(.media):not(.busy) .pill-eyes {
+  display: flex; gap: 20px; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  animation: eye-look 8s ease-in-out infinite;  /* "translate" adds to the centring transform above */
+}
+@keyframes eye-look {  /* glance left, back, right, back */
+  0%, 18%, 50%, 68%, 100% { translate: 0 0; }
+  25%, 42% { translate: -4px 0; }
+  75%, 92% { translate: 4px 1px; }
+}
+.pill-eyes i {
+  width: 10px; height: 16px; border-radius: 50%; background: #fff;
+  box-shadow: 0 0 8px rgba(255, 255, 255, .8), 0 0 16px rgba(120, 180, 255, .6);
+  animation: eye-blink 4.5s ease-in-out infinite;
+}
+/* Voice shortcut held (dock.js setListening), closed notch: the bottom glow moves like a wave
+   (the cyan and purple swap sides and swell up), the eyes stay */
+html[data-style="notch"] body.dock-body.listening:not(.open) {
+  background-repeat: no-repeat;
+  animation: glow-wave 1.4s ease-in-out infinite alternate;
+}
+html[data-style="notch"] body.dock-body.transcribing:not(.open) { animation-duration: 2.6s; }  /* turning speech into text */
+@keyframes glow-wave {
+  0%   { background-size: 160% 100%, 160% 100%, auto; background-position: 0% 100%, 100% 100%, 0 0; }
+  50%  { background-size: 160% 165%, 160% 165%, auto; background-position: 50% 100%, 50% 100%, 0 0; }
+  100% { background-size: 160% 110%, 160% 110%, auto; background-position: 100% 100%, 0% 100%, 0 0; }
+}
+
+/* Glass dock style (no glow): moving bars replace what the closed pill shows */
+.pill-wave { display: none; }
+html:not([data-style="notch"]) body.listening:not(.open) .pill-btn > :not(.pill-wave) { visibility: hidden; }
+html:not([data-style="notch"]) body.listening:not(.open) .pill-wave {
+  display: flex; align-items: center; gap: 3px; height: 22px;
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+}
+.pill-wave i {
+  width: 3px; height: 100%; border-radius: 2px;
+  background: linear-gradient(#5fd4ff, #9a6bff);
+  box-shadow: 0 0 6px rgba(110, 170, 255, .7);
+  animation: wave .9s ease-in-out infinite;
+}
+.pill-wave i:nth-child(2) { animation-delay: -.75s; }
+.pill-wave i:nth-child(3) { animation-delay: -.6s; }
+.pill-wave i:nth-child(4) { animation-delay: -.45s; }
+.pill-wave i:nth-child(5) { animation-delay: -.3s; }
+.pill-wave i:nth-child(6) { animation-delay: -.15s; }
+.pill-wave i:nth-child(7) { animation-delay: -.05s; }
+@keyframes wave { 0%, 100% { transform: scaleY(.25); } 50% { transform: scaleY(1); } }
+body.transcribing .pill-wave i { animation-duration: 1.8s; opacity: .6; }  /* turning speech into text */
+
+@keyframes eye-blink {
+  0%, 90%, 94%, 97%, 100% { transform: scaleY(1); }
+  92%, 95.5% { transform: scaleY(.1); }  /* a quick double blink */
+}
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* Tabs */

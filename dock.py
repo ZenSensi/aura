@@ -31,6 +31,7 @@ import base64
 import ctypes
 import ctypes.wintypes
 import io
+import os
 import sys
 import threading
 import time
@@ -42,7 +43,10 @@ import webview
 import config
 from PIL import Image, ImageEnhance, ImageFilter
 
+import hotkey
+import voice
 from nowplaying import NowPlaying
+import notch
 from notch import Clipboard, Devices, Hud
 
 WIDTH, HEIGHT = 660, 640   # the window never changes size: only its visible shape does.
@@ -50,6 +54,15 @@ WIDTH, HEIGHT = 660, 640   # the window never changes size: only its visible sha
                            # asked; the page measures its real size, so a little spare is fine)
 PILL = (300, 44)           # pill size (width, height), including the 2px ring (see dock.css)
 NOTCH = (364, 50)          # the notch is a little bigger (dock.css / dock.js)
+NOTCH_EAR = 10             # the notch's curved top shoulders (html::before/::after in dock.css)
+DND_MARK = os.path.join(config.BASE_DIR, "focus_dnd.mark")  # there while the focus timer has Do Not Disturb on
+
+
+def _remove(path):
+    try:
+        os.remove(path)
+    except OSError:
+        pass
 CARD_RADIUS = 22           # corner radius of the shape (the page draws 20 + the 2px ring)
 ANIMATION = 0.45           # seconds; same as the grow/shrink animation in dock.css
 MARGIN = 8                 # gap from the edges of the screen
@@ -178,6 +191,14 @@ class Dock:
         self.shape = (*PILL, PILL[1] // 2)  # what is cut out now: (width, height, corner radius)
         self._target = self.shape            # what the page is animating towards
         self._generation = 0                 # newest shape request (older timers are ignored)
+        self._shape_seq = 0                  # newest request number from the page (set_shape)
+        self._shape_lock = threading.Lock()
+        self._voice_lock = threading.Lock()  # held while the voice shortcut listens (push to talk)
+        self._dnd_ours = False               # the focus timer turned Do Not Disturb on (see _quiet)
+        if os.path.exists(DND_MARK):         # Aura stopped mid-timer last time: notifications come back
+            notch.set_do_not_disturb(False)
+            _remove(DND_MARK)
+        self._pending_banner = None          # a notification that came while the notch was open (_flash)
         self._glass_run = 0                  # newest glass loop (an older one stops itself)
         self._last_glass = None
         self.position = config.DOCK_POSITION  # "top-mid", "bottom-left"... (config.DOCK_POSITIONS)
@@ -244,12 +265,18 @@ class Dock:
         right, bottom = left + round(width * scale), top + round(height * scale)
         diameter = round(2 * radius * scale)
         # Notch: start the rounded box above the window, so its top corners fall outside (square)
-        region = ctypes.windll.gdi32.CreateRoundRectRgn(left, top - (diameter if self.style == "notch" else 0),
-                                                        right + 1, bottom + 1, diameter, diameter)
+        gdi32 = ctypes.windll.gdi32
+        region = gdi32.CreateRoundRectRgn(left, top - (diameter if self.style == "notch" else 0),
+                                          right + 1, bottom + 1, diameter, diameter)
+        if self.style == "notch":  # room for the curved shoulders that join it to the screen's top edge (dock.css)
+            ring, ear = round(2 * scale), round(NOTCH_EAR * scale)
+            ears = gdi32.CreateRectRgn(left + ring - ear, 0, right - ring + ear + 1, ear)
+            gdi32.CombineRgn(region, region, ears, 2)  # RGN_OR
+            gdi32.DeleteObject(ears)
         user32.SetWindowRgn(hwnd, region, True)  # Windows owns the region now
         self.shape = (width, height, radius)
 
-    def set_shape(self, width, height, radius):
+    def set_shape(self, width, height, radius, seq=0):
         """
         The page is animating the dock to this size (dock.js). Cut-out shapes can't
         animate, so: the cut-out grows at once to cover both the old and the new
@@ -257,10 +284,14 @@ class Dock:
         the extra area shows the sharp picture of the screen behind (dock.css), so
         it can't be seen.
         """
-        old = self.shape
-        self._target = (width, height, radius)
-        self._generation += 1
-        generation = self._generation
+        with self._shape_lock:
+            if seq and seq < self._shape_seq:
+                return  # an older request that arrived late (e.g. "pill" after "banner")
+            self._shape_seq = seq or self._shape_seq
+            old = self.shape
+            self._target = (width, height, radius)
+            self._generation += 1
+            generation = self._generation
         bigger = (max(old[0], width), max(old[1], height), max(old[2], radius))
         self._cut(*bigger)
 
@@ -378,6 +409,9 @@ class Dock:
     def collapse(self):
         self.expanded = False
         self._arm_autohide()
+        pending, self._pending_banner = self._pending_banner, None
+        if pending:  # it came while the notch was open
+            threading.Timer(0.6, self._flash, pending).start()  # after the shrink animation
 
     # ---------- The shortcut (hotkey.py) and settings ----------
     def shortcut(self):
@@ -390,6 +424,43 @@ class Dock:
         else:
             self.window.evaluate_js("expandDock()")
             self._arm_autohide()
+
+    def voice_shortcut(self):
+        """The voice shortcut was pressed: listen while it is held (a wave in the closed notch),
+        then open the dock with what was said in its box. Enter runs it."""
+        if not self._voice_lock.acquire(blocking=False):
+            return  # already listening
+        threading.Thread(target=self._push_to_talk, daemon=True).start()
+
+    def _push_to_talk(self):
+        try:
+            keys = hotkey.parse(config.VOICE_SHORTCUT)
+            key = hotkey.VK_SPACE if keys == hotkey.BACKTICK_SPACE else keys[1] if keys else 0
+            if not self.visible:
+                self.show(wait=0)
+            try:
+                voice.start()
+            except voice.VoiceError as e:
+                self.window.evaluate_js(f"voiceDone('', {json.dumps(str(e))})")
+                return
+            self.window.evaluate_js("setListening(true)")
+            started = time.time()
+            # Until the key is let go (the time limit is voice.py's too)
+            while key and ctypes.windll.user32.GetAsyncKeyState(key) & 0x8000 \
+                    and time.time() - started < config.MAX_VOICE_SECONDS:
+                time.sleep(0.03)
+            self.window.evaluate_js("setListening('working')")
+            try:
+                text = voice.stop()
+                error = "" if text else "I didn't hear anything. Hold the keys while you talk."
+            except voice.VoiceError as e:
+                text, error = "", str(e)
+            self.window.evaluate_js(f"voiceDone({json.dumps(text)}, {json.dumps(error)})")
+            self._arm_autohide()
+        except Exception as e:  # e.g. Aura closed meanwhile
+            print(f"  [voice shortcut] {e}")
+        finally:
+            self._voice_lock.release()
 
     def _arm_autohide(self):
         """Hide AUTOHIDE seconds from now, unless it is in use then. Only with autohide on,
@@ -427,21 +498,38 @@ class Dock:
     def stop_watchers(self):
         for watcher in (self.hud, self.devices, self.clipboard):
             watcher.stop()
+        self._quiet(False)  # Aura closing during a focus timer: notifications come back
 
     # ---------- Notch: focus timer and volume / brightness HUD ----------
+    def _quiet(self, on):
+        """Focus timer: Windows' Do Not Disturb on while it runs. Only turned off again if
+        Aura turned it on (if you had it on already, it stays on)."""
+        if on and not self._dnd_ours and notch.do_not_disturb() == 0:
+            self._dnd_ours = notch.set_do_not_disturb(True)
+            if self._dnd_ours:
+                open(DND_MARK, "w").close()  # if Aura crashes now, the next start turns it off (see __init__)
+        elif not on and self._dnd_ours:
+            notch.set_do_not_disturb(False)
+            self._dnd_ours = False
+            _remove(DND_MARK)
+
     def set_timer(self, seconds):
-        """Start a focus timer (seconds > 0) or stop it (0). It chimes and shows the notch when done."""
+        """Start a focus timer (seconds > 0) or stop it (0). It chimes and shows the notch when done.
+        System notifications are muted (Do Not Disturb) while it runs."""
         self._timer_run += 1
         run = self._timer_run
         if seconds <= 0:
             self.timer = None
+            self._quiet(False)
         else:
             self.timer = {"end": int(time.time() * 1000 + seconds * 1000), "total": int(seconds * 1000)}
+            self._quiet(True)
 
             def done():
                 if run != self._timer_run:
                     return  # stopped or restarted meanwhile
                 self.timer = None
+                self._quiet(False)
                 from notify import play_chime  # here: notify.py imports this file
                 play_chime("remind")
                 self.window.evaluate_js("setTimer(null)")
@@ -454,7 +542,11 @@ class Dock:
         """Show something in the closed notch for a moment (a HUD bar, a banner).
         If the notch was hidden it shows just for that and hides again afterwards.
         Nothing is shown while the notch is open (you are using it)."""
-        if self.style != "notch" or self.expanded:
+        if self.style != "notch":
+            return
+        if self.expanded:
+            if "showBanner" in script:  # a notification while you use the notch: show it once you close it
+                self._pending_banner = (script, seconds, end_script)
             return
         self._flash_run += 1
         run = self._flash_run

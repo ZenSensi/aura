@@ -40,12 +40,14 @@ function setupVoice(button, field) {
   }
 
   button.addEventListener("click", async () => {
-    if (state === "working") return;
+    if (state === "working" || state === "starting") return;  // a double click must not start twice
     // A failed call must still show a message and free the mic button
     const call = (name) => voiceApi()[name]().catch(() => ({ ok: false, error: "Voice typing stopped working. Try again." }));
     if (state === "idle") {
       placeholder = field.placeholder;
+      state = "starting";
       const r = await call("voice_start");
+      state = "idle";
       if (!r.ok) return flash(r.error);
       setState("listening", "Listening… click the mic again when you're done");
       return;

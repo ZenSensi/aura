@@ -45,10 +45,13 @@ def log_step(request_id, agent, model, input_text, output, seconds, success, fal
     status = "OK  " if success else "FAIL"
     print(f"  [log] {status} {agent:12} {entry['seconds']:>6}s  {model}")
 
-    if os.path.exists(LOG_FILE) and os.path.getsize(LOG_FILE) > MAX_LOG_BYTES:
-        os.replace(LOG_FILE, os.path.join(config.LOG_DIR, "run_log.1.jsonl"))
-    with open(LOG_FILE, "a", encoding="utf-8") as f:
-        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    try:  # a full disk or a locked log file must never stop a request
+        if os.path.exists(LOG_FILE) and os.path.getsize(LOG_FILE) > MAX_LOG_BYTES:
+            os.replace(LOG_FILE, os.path.join(config.LOG_DIR, "run_log.1.jsonl"))
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except OSError as e:
+        print(f"  [log] couldn't write the log: {e}")
 
     return entry
 

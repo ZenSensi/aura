@@ -19,6 +19,7 @@ import time
 import requests
 
 import config
+from dotenv import dotenv_values
 
 
 class LLMError(Exception):
@@ -105,6 +106,13 @@ def call_model(choice, messages):
     return {"text": text, "model": choice["model"], "seconds": seconds}
 
 
+def _cli_env(tool):
+    """The CLI's environment without Aura's own secrets (keys, Gmail password from .env): it never needs them."""
+    secrets = set(dotenv_values(config.ENV_FILE)) if os.path.isfile(config.ENV_FILE) else set()
+    env = {k: v for k, v in os.environ.items() if k not in secrets}
+    return {**env, **tool.get("env", {})}  # e.g. OpenCode's "deny" permissions
+
+
 def call_cli(name, messages):
     """Send chat messages to a coding-agent CLI (config.CLI_TOOLS) as one prompt; same result shape as call_model."""
     tool = config.CLI_TOOLS[name]
@@ -114,6 +122,13 @@ def call_cli(name, messages):
     base = os.path.join(config.BASE_DIR, "cli_work")
     os.makedirs(base, exist_ok=True)
     work = tempfile.mkdtemp(dir=base)  # empty folder per call: no project to look at, and the pictures go here
+    try:
+        return _run_cli(tool, path, work, messages)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)  # the user's pictures don't stay on disk, whatever happens
+
+
+def _run_cli(tool, path, work, messages):
     parts, images = [], []
     for m in messages:
         content = m["content"]
@@ -122,8 +137,12 @@ def call_cli(name, messages):
             for part in content:
                 if part.get("type") == "image_url":
                     name = f"image_{len(images) + 1}.jpg"
+                    try:
+                        data = base64.b64decode(part["image_url"]["url"].split(",", 1)[1])
+                    except (KeyError, IndexError, ValueError):
+                        raise LLMError("A picture couldn't be read.")
                     with open(os.path.join(work, name), "wb") as f:
-                        f.write(base64.b64decode(part["image_url"]["url"].split(",", 1)[1]))
+                        f.write(data)
                     images.append(name)
                 else:
                     text.append(part.get("text", ""))
@@ -142,13 +161,12 @@ def call_cli(name, messages):
     try:
         done = subprocess.run(command, input=prompt if tool["stdin"] else None, capture_output=True, text=True,
                               encoding="utf-8", errors="replace", cwd=work, timeout=config.CLI_TIMEOUT_SECONDS,
+                              env=_cli_env(tool),
                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     except subprocess.TimeoutExpired:
         raise LLMError(f"{tool['name']} took longer than {config.CLI_TIMEOUT_SECONDS} s.")
     except OSError as e:  # e.g. the prompt is too long for a Windows command line (agy)
         raise LLMError(f"Couldn't start {tool['name']}: {e}")
-    finally:
-        shutil.rmtree(work, ignore_errors=True)  # the user's pictures don't stay on disk
     text = re.sub(r"\x1b\[[0-9;]*m", "", done.stdout).strip()  # no terminal colours
     if done.returncode != 0 or not text:
         short = " ".join(re.sub(r"\x1b\[[0-9;]*m", "", done.stderr or done.stdout).split())[-200:]

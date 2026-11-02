@@ -11,6 +11,7 @@ venv/
 # Generated files
 outputs/*.txt
 logs/*.jsonl
+logs/organise_undo.json
 build_log.txt
 
 # Personal runtime state (saved by the app)
@@ -25,3 +26,5 @@ build/
 # Google sign-in (phone reminders)
 google_client.json
 google_token.json
+focus_dnd.mark
+cli_work/

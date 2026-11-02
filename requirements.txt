@@ -1,9 +1,11 @@
-requests>=2.31
-python-dotenv>=1.0
-pywebview>=5.0
-pillow>=10.0
-pystray>=0.19      # the system tray icon (tray.py)
-pymupdf>=1.24      # reads PDFs for the Reader agent
-pycaw>=20240316     # the notch: volume HUD and mute (notch.py)
-google-auth-oauthlib>=1.2   # phone reminders: Google Tasks + Calendar sign-in
-pyinstaller>=6.0,<7         # builds Aura.exe (build_exe.bat)
+# Exact versions (tested with Aura): a rebuild never pulls in a new, unreviewed release.
+# To update: change one number, test, then rebuild.
+requests==2.32.4
+python-dotenv==1.1.1
+pywebview==6.2.1
+pillow==11.3.0
+pystray==0.19.5             # the system tray icon (tray.py)
+pymupdf==1.27.2.2           # reads PDFs for the Reader agent
+pycaw==20251023             # the notch: volume HUD and mute (notch.py)
+google-auth-oauthlib==1.4.0 # phone reminders: Google Tasks + Calendar sign-in
+pyinstaller==6.20.0         # builds Aura.exe (build_exe.bat)

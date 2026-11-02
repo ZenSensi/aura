@@ -82,7 +82,8 @@ def start():
         raise VoiceError("No microphone found.")
     with _lock:
         if _recording and not _recording["done"].is_set():
-            return  # already recording
+            # one recording at a time: a second mic button / the voice shortcut must not take over this one
+            raise VoiceError("The microphone is already listening. Finish that first.")
         _recording = {"stop": threading.Event(), "done": threading.Event(), "error": None, "started": time.time()}
         threading.Thread(target=_record, args=(_recording,), daemon=True).start()
 

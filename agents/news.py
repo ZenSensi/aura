@@ -115,7 +115,7 @@ def fetch_market(symbol):
         "name": FRIENDLY.get(symbol) or meta.get("shortName") or symbol,
         "price": round(price, 2),
         "change": round(price - previous, 2),
-        "change_pct": round((price - previous) / previous * 100, 2),
+        "change_pct": round((price - previous) / previous * 100, 2) if previous else 0.0,
         "currency": meta.get("currency", ""),
         "points": [round(c, 2) for c in closes],  # for the chart
     }

@@ -130,8 +130,9 @@ class Hotkey:
                     return 1
             elif state["held"] and kind in DOWN:
                 if key.vk == VK_SPACE:
-                    state.update(used=True, space_up=True)
-                    self._press()
+                    if not state["space_up"]:  # Windows repeats a held Space: only the first press counts
+                        state.update(used=True, space_up=True)
+                        self._press()
                     return 1
                 # another key while ` is down: type the ` first, then that key, in order
                 state["held"] = False

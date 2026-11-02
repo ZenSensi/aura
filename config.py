@@ -12,6 +12,7 @@ model names on each provider's website:
 """
 
 import importlib
+import json
 import os
 import sys
 from dotenv import load_dotenv, set_key
@@ -148,13 +149,20 @@ AGENT_MODELS = {
 # ---------------------------------------------------------------
 AI_MODES = ("api", "cli")
 AI_MODE = os.getenv("AI_MODE") if os.getenv("AI_MODE") in AI_MODES else "api"
+# Each one is locked so it can only answer: no commands, no file edits. Aura gives them emails and web
+# pages, which could hide instructions ("prompt injection"), so asking nicely in the prompt isn't enough.
 CLI_TOOLS = {
-    "claude":      {"name": "Claude Code", "command": ["claude", "-p"], "stdin": True},
+    # --tools "" = no built-in tools; --strict-mcp-config with no --mcp-config = no connectors (Gmail, Notion...)
+    "claude":      {"name": "Claude Code", "command": ["claude", "-p", "--tools", "", "--strict-mcp-config"], "stdin": True},
     "codex":       {"name": "Codex", "command": ["codex", "exec", "--skip-git-repo-check", "--ephemeral",
                                                  "-s", "read-only", "--color", "never", "-"], "stdin": True,
                     "image_flag": "--image="},
-    "antigravity": {"name": "Antigravity", "command": ["agy", "-p"], "stdin": False},
-    "opencode":    {"name": "OpenCode", "command": ["opencode", "run"], "stdin": True},
+    # agy's -p takes the next word as the prompt, so it goes last (llm.py appends the prompt after it)
+    "antigravity": {"name": "Antigravity", "command": ["agy", "--mode", "plan", "--sandbox",
+                                                       "--disable-slash-commands", "-p"], "stdin": False},
+    "opencode":    {"name": "OpenCode", "command": ["opencode", "run"], "stdin": True,
+                    "env": {"OPENCODE_CONFIG_CONTENT": json.dumps(
+                        {"permission": {"edit": "deny", "bash": "deny", "webfetch": "deny"}})}},
 }
 CLI_TIMEOUT_SECONDS = 180  # CLIs start up and think longer than one API call
 ORCHESTRATOR_CLI = os.getenv("ORCHESTRATOR_CLI") if os.getenv("ORCHESTRATOR_CLI") in CLI_TOOLS else "claude"
@@ -217,6 +225,8 @@ DOCK_POSITIONS = ("top-left", "top-mid", "top-right", "bottom-left", "bottom-mid
 DOCK_POSITION = os.getenv("DOCK_POSITION") if os.getenv("DOCK_POSITION") in DOCK_POSITIONS else "top-mid"
 DOCK_SHORTCUT = os.getenv("DOCK_SHORTCUT") or "`+Space"  # hold ` and press Space (hotkey.py)
 DOCK_AUTOHIDE = os.getenv("DOCK_AUTOHIDE") == "1"
+# Voice shortcut: hold to talk (a wave in the notch), let go to type it in the dock (Enter runs it)
+VOICE_SHORTCUT = os.getenv("VOICE_SHORTCUT") or "Ctrl+Alt+V"
 # "notch": a black notch stuck to the top edge of the screen (always top middle) instead of the glass pill
 DOCK_STYLE = "notch" if os.getenv("DOCK_STYLE") == "notch" else "dock"
 

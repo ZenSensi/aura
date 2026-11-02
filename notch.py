@@ -153,6 +153,35 @@ def lock_pc():
     ctypes.windll.user32.LockWorkStation()
 
 
+# ---------- Do Not Disturb (focus timer) ----------
+# Windows has no public switch for it. Settings uses this Windows notification state
+# (WNF_SHEL_QUIETHOURS_ACTIVE_PROFILE_CHANGED): 0 = off, 1 = priority only (Do Not Disturb), 2 = alarms only.
+# shortcut: undocumented, may change in a future Windows; if a write fails, the timer just runs without it.
+QUIET_HOURS = 0x0D83063EA3BF1C75
+
+
+def do_not_disturb():
+    """The current profile (0 = off), or None if it can't be read."""
+    try:
+        state, stamp, size, value = ctypes.c_uint64(QUIET_HOURS), ctypes.c_ulong(0), ctypes.c_ulong(4), ctypes.c_uint32(0)
+        if ctypes.windll.ntdll.NtQueryWnfStateData(ctypes.byref(state), None, None, ctypes.byref(stamp),
+                                                    ctypes.byref(value), ctypes.byref(size)):
+            return None
+        return value.value
+    except (AttributeError, OSError):
+        return None
+
+
+def set_do_not_disturb(on):
+    """Turn Windows' Do Not Disturb on or off. True if Windows accepted it."""
+    try:
+        state, value = ctypes.c_uint64(QUIET_HOURS), ctypes.c_uint32(1 if on else 0)
+        return ctypes.windll.ntdll.NtUpdateWnfStateData(ctypes.byref(state), ctypes.byref(value), 4,
+                                                         None, None, 0, 0) == 0
+    except (AttributeError, OSError):
+        return False
+
+
 # ---------- Volume / brightness HUD ----------
 BRIGHTNESS_SCRIPT = r"""
 $ErrorActionPreference = 'SilentlyContinue'
@@ -164,6 +193,16 @@ while ($true) {
   Remove-Event -EventIdentifier $e.EventIdentifier
 }
 """
+
+
+class _Run:
+    """One start of a watcher. stop() switches it off; loops from an older start see that and end,
+    even if a new start came right after (a plain True/False flag would be True again for them)."""
+    def __init__(self):
+        self.on = True
+
+    def __bool__(self):
+        return self.on
 
 
 class Hud:
@@ -178,11 +217,13 @@ class Hud:
     def start(self):
         if self._running:
             return
-        self._running = True
-        threading.Thread(target=self._volume_loop, daemon=True).start()
-        threading.Thread(target=self._brightness_loop, daemon=True).start()
+        self._running = _Run()
+        threading.Thread(target=self._volume_loop, args=(self._running,), daemon=True).start()
+        threading.Thread(target=self._brightness_loop, args=(self._running,), daemon=True).start()
 
     def stop(self):
+        if self._running:
+            self._running.on = False
         self._running = False
         if self._process:
             try:
@@ -190,12 +231,12 @@ class Hud:
             except OSError:
                 pass
 
-    def _volume_loop(self):
+    def _volume_loop(self, run):  # run: this start's token (_Run)
         import comtypes
         comtypes.CoInitialize()
         try:
             volume, last = _speakers(), None
-            while self._running:
+            while run:
                 now = (round(volume.GetMasterVolumeLevelScalar() * 100), bool(volume.GetMute()))
                 if last is not None and now != last:
                     self.on_change("volume", now[0], now[1])
@@ -206,14 +247,14 @@ class Hud:
         finally:
             comtypes.CoUninitialize()
 
-    def _brightness_loop(self):
+    def _brightness_loop(self, run):  # run: this start's token (_Run)
         try:
             self._process = subprocess.Popen(
                 ["powershell", "-NoProfile", "-NonInteractive", "-Command", BRIGHTNESS_SCRIPT],
                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
                 creationflags=0x08000000)  # CREATE_NO_WINDOW
             for line in self._process.stdout:
-                if not self._running:
+                if not run:
                     break
                 if line.strip().isdigit():
                     self.on_change("brightness", int(line), False)
@@ -260,11 +301,13 @@ class Devices:
     def start(self):
         if self._running:
             return
-        self._running = True
-        threading.Thread(target=self._charger_loop, daemon=True).start()
-        threading.Thread(target=self._bluetooth_loop, daemon=True).start()
+        self._running = _Run()
+        threading.Thread(target=self._charger_loop, args=(self._running,), daemon=True).start()
+        threading.Thread(target=self._bluetooth_loop, args=(self._running,), daemon=True).start()
 
     def stop(self):
+        if self._running:
+            self._running.on = False
         self._running = False
         if self._process:
             try:
@@ -272,16 +315,16 @@ class Devices:
             except OSError:
                 pass
 
-    def _charger_loop(self):
+    def _charger_loop(self, run):  # run: this start's token (_Run)
         last = battery()
-        while self._running:
+        while run:
             time.sleep(2)
             now = battery()
             if now["percent"] is not None and now["charging"] != last["charging"]:
                 self.on_event("charger", now)
             last = now
 
-    def _bluetooth_loop(self):
+    def _bluetooth_loop(self, run):  # run: this start's token (_Run)
         seen = None  # names connected at the last check (None: the first check, which says nothing)
         try:
             self._process = subprocess.Popen(
@@ -289,7 +332,7 @@ class Devices:
                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, encoding="utf-8",
                 creationflags=0x08000000)  # CREATE_NO_WINDOW
             for line in self._process.stdout:
-                if not self._running:
+                if not run:
                     break
                 try:
                     devices = [d for d in json.loads(line) if isinstance(d, dict) and d.get("name")]
@@ -322,21 +365,26 @@ class Clipboard:
         self._ignore = 0         # our own copy (restore from the shelf) isn't a new item
         user32 = ctypes.windll.user32
         user32.RegisterClipboardFormatW.restype = ctypes.c_uint
+        # Marks password managers put on a copied secret: either one means "don't look"
         self._private = [user32.RegisterClipboardFormatW(name) for name in
-                         ("ExcludeClipboardContentFromMonitorProcessing", "CanIncludeInClipboardHistory")]
+                         ("ExcludeClipboardContentFromMonitorProcessing", "Clipboard Viewer Ignore")]
+        # This one holds a number: 0 = keep it out of clipboard history (private), 1 = fine
+        self._history = user32.RegisterClipboardFormatW("CanIncludeInClipboardHistory")
 
     def start(self):
         if not self._running:
-            self._running = True
-            threading.Thread(target=self._loop, daemon=True).start()
+            self._running = _Run()
+            threading.Thread(target=self._loop, args=(self._running,), daemon=True).start()
 
     def stop(self):
+        if self._running:
+            self._running.on = False
         self._running = False
 
-    def _loop(self):
+    def _loop(self, run):  # run: this start's token (_Run)
         user32 = ctypes.windll.user32
         last = user32.GetClipboardSequenceNumber()
-        while self._running:
+        while run:
             time.sleep(0.4)
             number = user32.GetClipboardSequenceNumber()
             if number == last:
@@ -370,6 +418,16 @@ class Clipboard:
         else:
             return None
         try:
+            if self._history and user32.IsClipboardFormatAvailable(self._history):
+                flag = user32.GetClipboardData(self._history)
+                pointer = kernel32.GlobalLock(flag) if flag else None
+                if not pointer:
+                    return None  # can't tell: treat it as private
+                try:
+                    if ctypes.c_uint32.from_address(pointer).value == 0:
+                        return None
+                finally:
+                    kernel32.GlobalUnlock(flag)
             handle = user32.GetClipboardData(CF_UNICODETEXT)
             if not handle:
                 return None

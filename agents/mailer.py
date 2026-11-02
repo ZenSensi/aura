@@ -18,6 +18,7 @@ SAFETY DESIGN (sending cannot be undone, so it is strict):
 
 import os
 import re
+import ssl
 import smtplib
 import time
 from email.message import EmailMessage
@@ -115,7 +116,8 @@ def run_mailer(task, state):
             message["In-Reply-To"] = original["message_id"]
             message["References"] = original["message_id"]
     message.set_content(body)
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=config.API_TIMEOUT_SECONDS) as server:
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=config.API_TIMEOUT_SECONDS,
+                          context=ssl.create_default_context()) as server:  # checks Gmail's certificate
         server.login(sender, config.GMAIL_APP_PASSWORD)
         server.send_message(message)
 

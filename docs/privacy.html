@@ -48,9 +48,15 @@
   <p>To do what you ask, Aura sends only what that task needs, directly from your PC to the service you set up:</p>
   <ul>
     <li><b>Your requests</b> go to the AI provider you choose in Settings (Groq, Google Gemini or OpenRouter with your own
-      API key), or to an AI command-line tool you have installed. Their own privacy policies apply.</li>
+      API key), or to an AI command-line tool you have installed. If that one fails or hits its limit, the same request
+      goes to the next one you have set up (another provider, or an installed AI tool). Their own privacy policies apply.</li>
+    <li><b>Files and pictures you attach</b> (the + button) are read on your PC; their text, or the picture, goes to
+      the AI provider (or AI tool) that answers, as above.</li>
+    <li><b>Voice typing:</b> the recording is sent to Groq to turn it into text, then deleted from your PC.</li>
     <li><b>Email:</b> if you add your Gmail address and app password, Aura reads and sends email only when you ask
-      (for example "summarise my unread emails").</li>
+      (for example "summarise my unread emails"). This uses Gmail's own mail servers with your app password, not the
+      Google sign-in above. To summarise or reply, the senders, subjects and the start of each email found go to the
+      AI provider that answers. A reply goes to the sender of the email Aura found, so check who it is from first.</li>
     <li><b>Web search and news:</b> search words go to Tavily (if you add a key) and Google News; market prices come from Yahoo Finance.</li>
     <li><b>Weather in the notch:</b> your internet address is used to find your city (ipwho.is or ipapi.co),
       and the city's coordinates go to Open-Meteo for the forecast.</li>

@@ -46,7 +46,7 @@ from agents.files import RUNNABLE, search_roots
 from agents.reader import FILE_TYPES as READABLE, kind_of as file_kind
 from dock import Dock, WIDTH as DOCK_WIDTH, HEIGHT as DOCK_HEIGHT
 from hotkey import Hotkey
-from notify import Notifier
+from notify import Notifier, play_chime
 from tray import Tray
 
 MAX_REQUEST_CHARS = 1000
@@ -171,6 +171,7 @@ class Api:
     def new_chat(self):
         """The New chat button: forget this conversation (the Chat agent starts fresh)."""
         self._memory.clear()
+        self._links.clear()  # links from the old chat can't be opened any more
 
     def get_recent(self):
         """Your latest requests, for "Recent tasks" in the sidebar."""
@@ -223,9 +224,10 @@ class Api:
         return {"ok": True}
 
     def _notify(self, kind, title, text, snooze=None):
-        """'Task done' and reminders: a banner in the notch (notch style), else the card at the top-right."""
+        """'Task done' and reminders: a banner in the notch (notch style), else the glass card at the top-right."""
         if self._dock and self._dock.style == "notch":
             self._dock.banner(kind, title, text, seconds=10 if snooze else 4.5, snooze=snooze)
+            play_chime(kind)  # the same sound as the card
         elif self._notifier:
             self._notifier.notify(kind, title, text, snooze=snooze)
 
@@ -363,14 +365,15 @@ class Api:
     def dock_collapse(self):
         self._dock.collapse()
 
-    def dock_shape(self, width, height, radius):
-        """The dock page is animating to this size (page pixels, ring included)."""
+    def dock_shape(self, width, height, radius, seq=0):
+        """The dock page is animating to this size (page pixels, ring included).
+        seq: the page's request number; an older one arriving late is ignored."""
         try:
-            width, height, radius = (int(float(v)) for v in (width, height, radius))
+            width, height, radius, seq = (int(float(v)) for v in (width, height, radius, seq))
         except (TypeError, ValueError):
             return
         self._dock.set_shape(max(40, min(DOCK_WIDTH, width)), max(30, min(DOCK_HEIGHT, height)),
-                             max(0, min(height // 2, radius)))
+                             max(0, min(height // 2, radius)), seq)
 
     def dock_run(self, text):
         """A task typed in the dock: the main window runs it (so it is also in the chat)."""
@@ -556,7 +559,9 @@ class Api:
         except ValueError:
             contacts = -1  # contacts.json is broken
         dock = {"position": config.DOCK_POSITION, "style": config.DOCK_STYLE, "shortcut": config.DOCK_SHORTCUT, "autohide": config.DOCK_AUTOHIDE,
-                "shortcut_ok": bool(self._hotkey and self._hotkey.text == config.DOCK_SHORTCUT)}
+                "shortcut_ok": bool(self._hotkey and self._hotkey.text == config.DOCK_SHORTCUT),
+                "voice_shortcut": config.VOICE_SHORTCUT,
+                "voice_ok": bool(getattr(self, "_voice_key", None) and self._voice_key.text == config.VOICE_SHORTCUT)}
         ai = {"mode": config.AI_MODE, "orchestrator": config.ORCHESTRATOR_CLI,
               "tools": {k: {"name": t["name"], "installed": bool(shutil.which(t["command"][0]))}
                         for k, t in config.CLI_TOOLS.items()},
@@ -606,6 +611,13 @@ class Api:
             if not self._hotkey.set(shortcut):
                 return {"error": f"{shortcut} can't be used: another app may have it. Try a different one."}
             changes["DOCK_SHORTCUT"] = shortcut
+        if "voice_shortcut" in values:
+            shortcut = str(values["voice_shortcut"])
+            if shortcut.replace(" ", "") == config.DOCK_SHORTCUT.replace(" ", ""):
+                return {"error": "That is already the dock's shortcut. Pick different keys."}
+            if not self._voice_key.set(shortcut):
+                return {"error": f"{shortcut} can't be used: another app may have it. Try a different one."}
+            changes["VOICE_SHORTCUT"] = shortcut
         if "autohide" in values:
             changes["DOCK_AUTOHIDE"] = "1" if values["autohide"] else "0"
             self._dock.set_autohide(bool(values["autohide"]))
@@ -676,6 +688,8 @@ class Api:
         except FileNotFoundError:
             saved = {}
         except (OSError, ValueError):
+            saved = None
+        if not isinstance(saved, dict):  # e.g. a list: writing to it would crash or lose it
             return {"error": "contacts.json has a mistake: fix it first (Edit contacts), so nothing in it is lost."}
         lower = {str(k).strip().lower(): k for k in saved}
         updated = 0
@@ -683,8 +697,10 @@ class Api:
             key = lower.get(name.lower(), name)  # same name (any case) -> replace that number
             updated += key in saved
             saved[key] = number
-        with open(config.CONTACTS_FILE, "w", encoding="utf-8") as f:
+        temporary = config.CONTACTS_FILE + ".tmp"  # write a copy first: a crash can't leave a half-written file
+        with open(temporary, "w", encoding="utf-8") as f:
             json.dump(saved, f, indent=2, ensure_ascii=False)
+        os.replace(temporary, config.CONTACTS_FILE)
         return {"added": len(found) - updated, "updated": updated, "skipped": skipped, "settings": self.get_settings()}
 
 
@@ -696,10 +712,11 @@ def already_running():
     """
     if sys.platform != "win32":
         return False
-    kernel32, user32 = ctypes.windll.kernel32, ctypes.windll.user32
+    # use_last_error: ctypes keeps CreateMutexW's own error code (a plain GetLastError() call can read a later one)
+    kernel32, user32 = ctypes.WinDLL("kernel32", use_last_error=True), ctypes.windll.user32
     kernel32.CreateMutexW.restype = ctypes.c_void_p
     already_running.mutex = kernel32.CreateMutexW(None, False, "Local\\AuraAssistantSingleInstance")  # kept open
-    if kernel32.GetLastError() != 183:  # ERROR_ALREADY_EXISTS
+    if ctypes.get_last_error() != 183:  # ERROR_ALREADY_EXISTS
         return False
     hwnd = user32.FindWindowW(None, "Aura")
     if hwnd:
@@ -735,17 +752,38 @@ def main():
     # The dock's shortcut works in every app (hotkey.py); if it is taken, Settings > Dock says so
     api._hotkey = Hotkey(dock.shortcut)
     window.events.shown += lambda: api._hotkey.set(config.DOCK_SHORTCUT)
+    api._voice_key = Hotkey(dock.voice_shortcut)  # press: listen, press again: type what you said
+    window.events.shown += lambda: api._voice_key.set(config.VOICE_SHORTCUT)
 
     # The "task done" notification at the top-right of the screen
     notifier = Notifier(resource_path("static", "notify.html"), api)
     api._notifier = notifier
 
-    tray = Tray(resource_path("assets", "icon.ico"), api.dock_open_main, api.tray_settings, window.destroy)
+    quitting = threading.Event()
+
+    def quit_app():  # only "Quit Aura" in the tray really closes Aura
+        quitting.set()
+        window.destroy()
+
+    def on_closing():  # the window's X: hide to the tray and the dock instead
+        # Quit Aura in the tray, or Windows shutting down / signing out (else Aura would block it)
+        if quitting.is_set() or (sys.platform == "win32" and ctypes.windll.user32.GetSystemMetrics(0x2000)):
+            return True
+
+        def hide():  # off the GUI thread: hide() waits for it
+            window.hide()
+            dock.on_minimized()
+        threading.Thread(target=hide, daemon=True).start()
+        return False  # cancels the close
+    window.events.closing += on_closing
+
+    tray = Tray(resource_path("assets", "icon.ico"), api.dock_open_main, api.tray_settings, quit_app)
 
     def close_helpers():  # closing Aura closes the dock and the notification too
         dock.media.stop()  # and the Now Playing watcher
         dock.stop_watchers()  # and the notch's watchers (volume, devices, clipboard)
         api._hotkey.stop()
+        api._voice_key.stop()
         tray.stop()
         dock.window.destroy()
         notifier.window.destroy()

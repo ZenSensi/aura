@@ -89,6 +89,7 @@ class Notifier:
         self.visible = False
         self._ready = threading.Event()  # the page has loaded
         self._lock = threading.Lock()    # one notification at a time
+        self._reminder_up = False        # a reminder card is showing (another reminder waits for it)
         self.window = webview.create_window(
             TITLE, url=url, js_api=api,
             width=WIDTH, height=HEIGHT,
@@ -144,8 +145,14 @@ class Notifier:
         threading.Thread(target=self._show, args=(kind, title, text, snooze), daemon=True).start()
 
     def _show(self, kind, title, text, snooze=None):
-        if not self._ready.wait(10):
-            return  # the page never loaded
+        if not self._ready.wait(60):
+            print("  [notify] the notification page never loaded")
+            return
+        if snooze:  # two reminders due together: the second waits for the first card (up to a minute)
+            for _ in range(120):
+                if not (self.visible and self._reminder_up):
+                    break
+                time.sleep(0.5)
         with self._lock:
             hwnd = self._hwnd()
             if not hwnd:
@@ -158,6 +165,7 @@ class Notifier:
                 self.window.evaluate_js(f"setGlass({json.dumps(pictures[0])}, {json.dumps(pictures[1])})")
             ctypes.windll.user32.ShowWindow(hwnd, SW_SHOWNOACTIVATE)  # show without taking the focus
             already_showing, self.visible = self.visible, True
+            self._reminder_up = bool(snooze)
             self.window.evaluate_js(f"notify({json.dumps({'kind': kind, 'title': title, 'text': text, 'snooze': snooze})})")
             play_chime(kind)  # as the card slides in
         if not already_showing:  # a newer notification just replaces the text: one loop is enough

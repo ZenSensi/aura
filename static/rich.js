@@ -18,7 +18,8 @@ const MATH_OR_CODE = /(```[\s\S]*?(?:```|$)|`[^`\n]+`)|\$\$([\s\S]+?)\$\$|\\\[([
 const MARKDOWN_PURIFY = {
   FORBID_TAGS: ["img", "picture", "video", "audio", "source", "form", "input", "button", "textarea", "select",
                 "option", "svg", "math", "style", "iframe", "object", "embed", "link", "meta"],
-  FORBID_ATTR: ["style", "srcset"],
+  // id / name: a model's HTML could otherwise make elements that shadow page globals ("DOM clobbering")
+  FORBID_ATTR: ["style", "srcset", "id", "name"],
 };
 
 function richAnswer(text) {
@@ -31,7 +32,7 @@ function richAnswer(text) {
     const display = display1 !== undefined || display2 !== undefined;
     const tex = display1 ?? display2 ?? inline1 ?? inline2;
     // KaTeX's drawing needs its inline styles, so it gets its own (default) DOMPurify pass
-    maths.push(DOMPurify.sanitize(katex.renderToString(tex.trim(), { displayMode: display, throwOnError: false, output: "html" })));
+    maths.push(DOMPurify.sanitize(katex.renderToString(tex.trim(), { displayMode: display, throwOnError: false, output: "html", maxSize: 20, maxExpand: 500 })));
     return `${mark}${maths.length - 1}${mark}`;
   });
 

@@ -30,6 +30,7 @@ SAFETY:
 import json
 import os
 import re
+import shutil
 import threading
 import time
 import uuid
@@ -58,7 +59,14 @@ def load():
         try:
             with open(FILE, encoding="utf-8") as f:
                 data = json.load(f)
-        except (OSError, ValueError):
+        except FileNotFoundError:
+            data = {}
+        except (OSError, ValueError) as e:  # broken file: keep a copy, so the next save can't wipe your routines
+            print(f"  [automations] couldn't read {FILE}: {e}")
+            try:
+                shutil.copyfile(FILE, FILE + f".broken-{int(time.time())}")
+            except OSError:
+                pass
             data = {}
         return {kind: list(data.get(kind) or []) for kind in ("routines", "reminders", "workflows")}
 
@@ -429,7 +437,14 @@ class Scheduler:
 
         for r in due_reminders:
             at = parse_stamp(r["at"])
-            self.on_reminder(r, late=bool(at and now - at > timedelta(minutes=2)))
+            try:
+                self.on_reminder(r, late=bool(at and now - at > timedelta(minutes=2)))
+            except Exception as e:  # couldn't show it: put it back for the next tick, and go on with the rest
+                print(f"  [automations] reminder not shown, will retry: {e}")
+                with _lock:
+                    data = load()
+                    data["reminders"].append(r)
+                    save(data)
 
         for r in due_routines:  # one at a time: Aura runs one request at a time
             if not self.on_routine(r):

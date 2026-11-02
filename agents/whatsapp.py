@@ -63,8 +63,12 @@ def load_contacts():
             data = json.load(f)
     except FileNotFoundError:
         return {}
-    except (OSError, ValueError):
+    except OSError as e:
+        raise ValueError(f"contacts.json couldn't be read ({e.strerror or e}).")
+    except ValueError:
         raise ValueError("contacts.json is not valid JSON. See contacts.example.json.")
+    if not isinstance(data, dict):
+        raise ValueError('contacts.json must be a list of "name": "number" pairs in { }. See contacts.example.json.')
     contacts = {}
     for name, number in data.items():
         digits = re.sub(r"\D", "", str(number))
@@ -195,14 +199,20 @@ def press(*keys):
 
 
 def type_text(text):
-    """Type text as if from the keyboard. New lines use Shift+Enter (plain Enter would send)."""
+    """Type text as if from the keyboard. New lines use Shift+Enter (plain Enter would send).
+    Returns False (and stops) if WhatsApp stops being the window in front, so keys never land elsewhere."""
+    # No control characters: a stray \r, tab or escape code must not act like a key press
+    text = re.sub(r"[\x00-\x09\x0b-\x1f\x7f]", " ", text.replace("\r\n", "\n"))
     for line_number, line in enumerate(text.split("\n")):
+        if not front_window_is_whatsapp():
+            return False
         if line_number:
             press(VK_SHIFT, VK_RETURN)
         units = line.encode("utf-16-le")  # emojis are 2 units; each is sent as its own event
         codes = [int.from_bytes(units[i:i + 2], "little") for i in range(0, len(units), 2)]
         _send([e for c in codes for e in ((0, c, UNICODE), (0, c, UNICODE | KEYUP))])
         time.sleep(0.02)
+    return True
 
 
 def exact_words(task, request):
@@ -296,16 +306,22 @@ def run_whatsapp(task, state):
         return refuse("another window kept coming to the front, so I didn't type or send anything.", start)
     # WhatsApp handles keys a little later than we send them, so each step gets a
     # short pause (without them, "select all" landed AFTER the typing and Enter did nothing)
+    lost = "another window came to the front, so I stopped and didn't press send."
     press(VK_CONTROL, VK_A)   # clear any old draft in the message box
     time.sleep(0.4)
+    if not front_window_is_whatsapp():  # checked before EVERY key, so none lands in another app
+        return refuse(lost, start)
     press(VK_BACK)
     time.sleep(0.4)
-    type_text(text)
+    if not type_text(text):
+        return refuse(lost, start)
     time.sleep(0.6)
-    if not front_window_is_whatsapp():  # and once more right before Enter
-        return refuse("another window came to the front, so I didn't press send.", start)
+    if not front_window_is_whatsapp():
+        return refuse(lost, start)
     press(VK_END)             # cursor to the end: nothing selected, so Enter sends
     time.sleep(0.2)
+    if not front_window_is_whatsapp():  # and once more right before Enter
+        return refuse(lost, start)
     press(VK_RETURN)
     return make_result("send_whatsapp", name, f"Sent on WhatsApp to {name.title()}: \"{text[:60]}\"", start)
 
