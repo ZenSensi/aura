@@ -200,6 +200,7 @@ class Dock:
             _remove(DND_MARK)
         self._pending_banner = None          # a notification that came while the notch was open (_flash)
         self._glass_run = 0                  # newest glass loop (an older one stops itself)
+        self._size = None                    # the window's real size in pixels (see _heal)
         self._last_glass = None
         self.position = config.DOCK_POSITION  # "top-mid", "bottom-left"... (config.DOCK_POSITIONS)
         self.autohide = config.DOCK_AUTOHIDE
@@ -345,6 +346,27 @@ class Dock:
         self.window.evaluate_js(f"setGlass('{urls[0]}', '{urls[1]}')")
         return True
 
+    def _heal(self):
+        """Waking from sleep (the screen turns off and on) can shrink the window and drop its
+        cut-out, so the whole window shows as a grey box. Put back its size, place and cut-out."""
+        hwnd = self._hwnd()
+        if not hwnd:
+            return
+        user32, gdi32 = ctypes.windll.user32, ctypes.windll.gdi32
+        rect = ctypes.wintypes.RECT()
+        user32.GetWindowRect(hwnd, ctypes.byref(rect))
+        size = (rect.right - rect.left, rect.bottom - rect.top)
+        probe = gdi32.CreateRectRgn(0, 0, 0, 0)
+        has_cut = user32.GetWindowRgn(hwnd, probe) not in (0, 1)  # ERROR / NULLREGION = no cut-out
+        gdi32.DeleteObject(probe)
+        if self._size is None:
+            self._size = size  # its real size, the first time it is shown
+        if size == self._size and has_cut:
+            return
+        user32.SetWindowPos(hwnd, 0, 0, 0, *self._size, 0x0002 | 0x0004 | 0x0010)  # NOMOVE | NOZORDER | NOACTIVATE
+        self._place()
+        self._cut(*self._target)
+
     def _glass_loop(self, run):
         """Keep the glass live while the dock is on screen: fast while things move behind it."""
         wait = GLASS_SLOW
@@ -352,6 +374,7 @@ class Dock:
             time.sleep(wait)
             if self.visible and run == self._glass_run:
                 try:
+                    self._heal()
                     wait = GLASS_FAST if self._update_glass() else GLASS_SLOW
                 except Exception:
                     wait = GLASS_SLOW  # e.g. the window closed meanwhile
