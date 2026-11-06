@@ -107,8 +107,8 @@ class Notifier:
 
     def _hwnd(self):
         native = getattr(self.window, "native", None)
-        if sys.platform != "win32" or native is None:
-            return 0
+        if sys.platform != "win32" or native is None or not native.IsHandleCreated:
+            return 0  # reading .Handle then would create the window on this thread (see dock._hwnd)
         return int(native.Handle.ToInt64())
 
     def _place(self, hwnd):

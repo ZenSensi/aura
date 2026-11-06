@@ -30,6 +30,7 @@ How it works:
 import base64
 import ctypes
 import ctypes.wintypes
+import faulthandler
 import io
 import os
 import sys
@@ -201,6 +202,8 @@ class Dock:
         self._pending_banner = None          # a notification that came while the notch was open (_flash)
         self._glass_run = 0                  # newest glass loop (an older one stops itself)
         self._size = None                    # the window's real size in pixels (see _heal)
+        self._shaped_at = 0.0                # when set_shape last started an animation (see _heal)
+        self._recut_at = 0.0                 # when _heal last re-applied the cut-out
         self._last_glass = None
         self.position = config.DOCK_POSITION  # "top-mid", "bottom-left"... (config.DOCK_POSITIONS)
         self.autohide = config.DOCK_AUTOHIDE
@@ -230,7 +233,9 @@ class Dock:
     def _hwnd(self):
         """This dock's own Windows handle (not found by title, so two copies of Aura can't mix up)."""
         native = getattr(self.window, "native", None)
-        if sys.platform != "win32" or native is None:
+        # Never read .Handle while it isn't created: WinForms would create the window on THIS
+        # (background) thread, which has no message loop -> a hung grey/white box (2026-11-07)
+        if sys.platform != "win32" or native is None or not native.IsHandleCreated:
             return 0
         return int(native.Handle.ToInt64())
 
@@ -292,6 +297,7 @@ class Dock:
             self._shape_seq = seq or self._shape_seq
             old = self.shape
             self._target = (width, height, radius)
+            self._shaped_at = time.time()
             self._generation += 1
             generation = self._generation
         bigger = (max(old[0], width), max(old[1], height), max(old[2], radius))
@@ -347,8 +353,8 @@ class Dock:
         return True
 
     def _heal(self):
-        """Waking from sleep (the screen turns off and on) can shrink the window and drop its
-        cut-out, so the whole window shows as a grey box. Put back its size, place and cut-out."""
+        """Waking from sleep or starting Windows can leave the whole window showing as a grey
+        box: its size or cut-out gets lost. Put back its size, place and cut-out."""
         hwnd = self._hwnd()
         if not hwnd:
             return
@@ -362,6 +368,12 @@ class Dock:
         if self._size is None:
             self._size = size  # its real size, the first time it is shown
         if size == self._size and has_cut:
+            # Windows can stop applying a cut-out it still reports (seen 2026-11-06: same size,
+            # region there, grey box), so re-apply it every 2 s; never mid-animation (set_shape).
+            now = time.time()
+            if now - self._recut_at > 2 and now - self._shaped_at > ANIMATION + 0.3:
+                self._recut_at = now
+                self._cut(*self._target)
             return
         user32.SetWindowPos(hwnd, 0, 0, 0, *self._size, 0x0002 | 0x0004 | 0x0010)  # NOMOVE | NOZORDER | NOACTIVATE
         self._place()
@@ -374,10 +386,34 @@ class Dock:
             time.sleep(wait)
             if self.visible and run == self._glass_run:
                 try:
-                    self._heal()
                     wait = GLASS_FAST if self._update_glass() else GLASS_SLOW
                 except Exception:
                     wait = GLASS_SLOW  # e.g. the window closed meanwhile
+
+    def _heal_loop(self, run):
+        """_heal on its own thread: the glass loop can hang in evaluate_js when the page
+        stops responding, and that is exactly when the grey box needs hiding."""
+        logged = False
+        while self.visible and run == self._glass_run:
+            time.sleep(GLASS_SLOW)
+            try:
+                if not self._answers():  # its thread is stuck: Windows shows a grey stand-in
+                    if not logged:       # (and _heal would get stuck too)
+                        logged = True
+                        with open(os.path.join(config.LOG_DIR, "hang.log"), "a", encoding="utf-8") as f:
+                            f.write(f"\n=== dock not answering {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n")
+                            faulthandler.dump_traceback(f, all_threads=True)
+                    continue
+                logged = False
+                self._heal()
+            except Exception:
+                pass  # e.g. the window closed meanwhile
+
+    def _answers(self):
+        """True if the dock window's thread answers within 2 s (WM_NULL, like Windows' own hang check)."""
+        hwnd, result = self._hwnd(), ctypes.wintypes.DWORD()
+        return not hwnd or bool(ctypes.windll.user32.SendMessageTimeoutW(
+            hwnd, 0, 0, 0, 0x0002, 2000, ctypes.byref(result)))  # SMTO_ABORTIFHUNG
 
     # ---------- Called by the main window's events ----------
     def on_minimized(self):
@@ -404,6 +440,7 @@ class Dock:
         self._reshape()
         self._glass_run += 1  # hide + show quickly, or two show events: only this loop keeps running
         threading.Thread(target=self._glass_loop, args=(self._glass_run,), daemon=True).start()
+        threading.Thread(target=self._heal_loop, args=(self._glass_run,), daemon=True).start()
         self.media.start()
 
     def hide(self):

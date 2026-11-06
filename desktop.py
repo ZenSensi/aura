@@ -73,8 +73,8 @@ def style_title_bar(window, theme):
     minimise / maximise / close buttons keep working as usual.
     """
     native = getattr(window, "native", None)
-    if sys.platform != "win32" or native is None:
-        return
+    if sys.platform != "win32" or native is None or not native.IsHandleCreated:
+        return  # reading .Handle then would create the window on this thread (see dock._hwnd)
     background, text = TITLE_BAR.get(theme, TITLE_BAR["dark"])
     hwnd = int(native.Handle.ToInt64())
     dwm = ctypes.windll.dwmapi
