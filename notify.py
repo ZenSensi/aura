@@ -27,6 +27,7 @@ import tempfile
 import threading
 import time
 import wave
+import zlib
 
 import webview
 
@@ -44,18 +45,23 @@ CHIMES = {
     "info":  [(784.0, 0.0), (1046.5, 0.075)],   # G5 -> C6
     "warn":  [(987.8, 0.0), (740.0, 0.09)],     # B5 -> F#5
     "error": [(659.3, 0.0), (493.9, 0.10)],     # E5 -> B4
-    "remind": [(880.0, 0.0), (1108.7, 0.09), (1318.5, 0.18)],  # A5 -> C#6 -> E6: a little bell
+    # Reminders and the focus timer: an alarm, the little bell A5 -> C#6 -> E6 rung 4 times (~3 s)
+    "remind": [(f, ring * 0.8 + start) for ring in range(4)
+               for f, start in ((880.0, 0.0), (1108.7, 0.09), (1318.5, 0.18))],
 }
 CHIME_VOLUME = 0.22   # 0..1, kept soft
+ALARM_VOLUME = 0.6    # the "remind" alarm is meant to be heard
 RATE = 44100          # samples per second
 
 
 def chime_file(kind):
     """Make the chime's .wav once (in the temp folder) and return its path."""
-    path = os.path.join(tempfile.gettempdir(), f"aura_chime_{kind}.wav")
+    notes = CHIMES.get(kind, CHIMES["info"])
+    volume = ALARM_VOLUME if kind == "remind" else CHIME_VOLUME
+    # The name includes the sound itself, so changing a chime never plays an old cached file
+    path = os.path.join(tempfile.gettempdir(), f"aura_chime_{kind}_{zlib.crc32(repr((notes, volume)).encode())}.wav")
     if os.path.isfile(path):
         return path
-    notes = CHIMES.get(kind, CHIMES["info"])
     length = int(RATE * (notes[-1][1] + 0.32))
     samples = [0.0] * length
     for freq, start in notes:
@@ -66,7 +72,7 @@ def chime_file(kind):
             tone = math.sin(2 * math.pi * freq * t) + 0.18 * math.sin(4 * math.pi * freq * t)  # + a little warmth
             samples[first + i] += envelope * tone
     peak = max(abs(s) for s in samples) or 1.0
-    frames = b"".join(struct.pack("<h", int(32767 * CHIME_VOLUME * s / peak)) for s in samples)
+    frames = b"".join(struct.pack("<h", int(32767 * volume * s / peak)) for s in samples)
     with wave.open(path, "wb") as f:
         f.setnchannels(1)
         f.setsampwidth(2)
