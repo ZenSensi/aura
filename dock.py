@@ -204,6 +204,7 @@ class Dock:
         self._size = None                    # the window's real size in pixels (see _heal)
         self._shaped_at = 0.0                # when set_shape last started an animation (see _heal)
         self._recut_at = 0.0                 # when _heal last re-applied the cut-out
+        self._reshown_at = 0.0               # when _repair last hid + showed the window
         self._last_glass = None
         self.position = config.DOCK_POSITION  # "top-mid", "bottom-left"... (config.DOCK_POSITIONS)
         self.autohide = config.DOCK_AUTOHIDE
@@ -374,10 +375,48 @@ class Dock:
             if now - self._recut_at > 2 and now - self._shaped_at > ANIMATION + 0.3:
                 self._recut_at = now
                 self._cut(*self._target)
+                if not self.expanded and self._grey_box(hwnd):
+                    self._repair(hwnd)
             return
         user32.SetWindowPos(hwnd, 0, 0, 0, *self._size, 0x0002 | 0x0004 | 0x0010)  # NOMOVE | NOZORDER | NOACTIVATE
         self._place()
         self._cut(*self._target)
+
+    def _grey_box(self, hwnd):
+        """True if the screen shows Windows' grey stand-in (32,32,32: a window that never drew)
+        where the cut-out should show the desktop: 3 points on the side away from the dock.
+        shortcut: a wallpaper exactly that grey at all 3 points looks the same (repair is throttled)."""
+        user32, gdi32 = ctypes.windll.user32, ctypes.windll.gdi32
+        rect = ctypes.wintypes.RECT()
+        user32.GetWindowRect(hwnd, ctypes.byref(rect))
+        y = rect.top + 10 if self._pos().startswith("bottom") else rect.bottom - 10
+        dc = user32.GetDC(0)
+        try:
+            return all(gdi32.GetPixel(dc, x, y) == 0x202020
+                       for x in (rect.left + 10, (rect.left + rect.right) // 2, rect.right - 10))
+        finally:
+            user32.ReleaseDC(0, dc)
+
+    def _repair(self, hwnd):
+        """Clear the grey box: redraw with the cut-out (FRAMECHANGED cleared it live on 2026-11-07),
+        and if it is still there, hide and show the window. Logged to dock.log."""
+        user32 = ctypes.windll.user32
+        float_style(hwnd)
+        self._cut(*self._target)
+        user32.SetWindowPos(hwnd, 0, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0004 | 0x0010 | 0x0020)  # FRAMECHANGED
+        time.sleep(0.5)
+        step = "redraw"
+        if self._grey_box(hwnd) and time.time() - self._reshown_at > 30:  # not a flicker loop
+            self._reshown_at = time.time()
+            user32.ShowWindow(hwnd, 0)   # SW_HIDE
+            time.sleep(0.2)
+            user32.ShowWindow(hwnd, 4)   # SW_SHOWNOACTIVATE
+            self._cut(*self._target)
+            time.sleep(0.5)
+            step = "hide+show"
+        with open(os.path.join(config.LOG_DIR, "dock.log"), "a", encoding="utf-8") as f:
+            f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} grey box, hwnd {hwnd}: {step} -> "
+                    f"{'STILL GREY' if self._grey_box(hwnd) else 'fixed'}\n")
 
     def _glass_loop(self, run):
         """Keep the glass live while the dock is on screen: fast while things move behind it."""

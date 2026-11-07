@@ -11,6 +11,7 @@ venv/
 # Generated files
 outputs/*.txt
 logs/*.jsonl
+logs/*.log
 logs/organise_undo.json
 build_log.txt
 
