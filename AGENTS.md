@@ -7,7 +7,7 @@ and the traps already found the hard way.
 
 - Repo: `https://github.com/ZenSensi/aura` (PUBLIC), branch `main`
 - Website (GitHub Pages from `docs/`): `https://zensensi.github.io/aura/`
-- Current version: **1.5.1** (`version_info.txt`), latest GitHub Release `v1.5.1`
+- Current version: **1.6.0** (`version_info.txt`), latest GitHub Release `v1.6.0`
 - Written: 2026-11-13. If code and this file disagree, the code wins; fix this file.
 
 ---
@@ -480,13 +480,12 @@ python -m PyInstaller --noconfirm Aura.spec          # alternative: writes dist\
 
 ## 16. Current state (2026-11-13, late evening)
 
-- `main` is pushed and matches `origin/main`. The newest work is not in any release (latest is `v1.5.1`):
-  the grey-box detect-and-repair (`a31d95d`), and after it: locked keys in `.env` (DPAPI), the dock and
-  notification windows limited to their own functions, Antigravity's prompt on stdin, Reader limits for
-  huge Word files and PDFs, contact-name lookup through Connect Gmail, the grey-box log that names the
-  cause, this file and `CLAUDE.md`. All tested as listed below.
-- `dist\Aura.exe` is built from that work. `Aura.exe` in the repo folder (the copy the owner runs) is
-  still the older build from `a31d95d` until the owner quits Aura and swaps it.
+- `main` is pushed and matches `origin/main`. Release **v1.6.0** (Latest) is built from it and holds
+  everything: the grey-box detect-and-repair, locked keys in `.env` (DPAPI), the dock and notification
+  windows limited to their own functions, Antigravity's prompt on stdin, Reader limits, contact-name
+  lookup through Connect Gmail, and the grey-box log that names the cause.
+- `Aura.exe` in the repo folder (the copy the owner runs) may still be an older build: `dist/Aura.exe`
+  is the 1.6.0 one, to be copied over it after the owner quits Aura.
 - 33 planner tests; last full run 32/33 (Notion, see section 12). Not re-run after these changes
   (nothing in planning changed); two dry-run requests were run end to end.
 
@@ -536,6 +535,7 @@ python -m PyInstaller --noconfirm Aura.spec          # alternative: writes dist\
 | 1.4.0 | Notch style and its features, AI engine choice (API or CLI), bundled Google sign-in, security review, push-to-talk, focus timer with Do Not Disturb |
 | 1.5.0 | Connect Gmail (read, send, manage through Google sign-in), ask before sending |
 | 1.5.1 | Grey-box root-cause fix, louder reminder alarm |
+| 1.6.0 | Saved keys locked by Windows, dock and notification windows limited to their own functions, Reader limits, grey-box log names the cause, `AGENTS.md` |
 
 ---
 
