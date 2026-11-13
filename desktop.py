@@ -141,6 +141,23 @@ def confirm_send(kind, to, text):
     return answer == 6  # IDYES
 
 
+# The dock and the notification card get only the functions their pages call (dock.js + voice.js,
+# notify.js), not the whole Api: those small pages can't save settings, read files or change keys.
+DOCK_API = ("dock_collapse", "dock_expand", "dock_media", "dock_open_main", "dock_run", "dock_shape",
+            "get_automations", "notch_copy", "notch_google", "notch_home", "notch_shelf", "notch_timer",
+            "notch_toggle", "notch_usage", "notify_open", "notify_snooze", "open_file", "open_found",
+            "open_link", "show_found", "tray_settings", "voice_start", "voice_stop")
+NOTIFY_API = ("notify_hide", "notify_open", "notify_shape", "notify_snooze")
+
+
+def only(api, names):
+    """An object with just these Api functions, to hand to a window as its js_api.
+    Real methods of a new class (not the Api's own bound methods): a page can't climb back to the Api."""
+    def method(name):
+        return lambda self, *args: getattr(api, name)(*args)
+    return type("WindowApi", (), {name: method(name) for name in names})()
+
+
 class Api:
     """Python functions the page can call. Names starting with _ stay hidden."""
 
@@ -777,7 +794,7 @@ def main():
     window.events.shown += lambda: style_title_bar(window, "dark")  # until the page sends its theme
 
     # The dock: shown when the main window is minimised, hidden when it comes back
-    dock = Dock(resource_path("static", "dock.html"), api)
+    dock = Dock(resource_path("static", "dock.html"), only(api, DOCK_API))
     api._dock = dock
     window.events.minimized += dock.on_minimized
     window.events.restored += dock.on_restored
@@ -789,7 +806,7 @@ def main():
     window.events.shown += lambda: api._voice_key.set(config.VOICE_SHORTCUT)
 
     # The "task done" notification at the top-right of the screen
-    notifier = Notifier(resource_path("static", "notify.html"), api)
+    notifier = Notifier(resource_path("static", "notify.html"), only(api, NOTIFY_API))
     api._notifier = notifier
 
     quitting = threading.Event()

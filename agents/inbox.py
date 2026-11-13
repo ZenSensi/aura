@@ -322,6 +322,20 @@ def name_from_address(address):
     return " ".join(p.capitalize() for p in parts) if len(parts) >= 2 else ""
 
 
+def gmail_contact_name(address):
+    """Their name from the newest few emails from or to them, through the Gmail API (read-only). "" if none."""
+    for header in ("From", "To"):
+        listed = google_sync.gmail("GET", "messages", params={"q": f"{header.lower()}:{address}", "maxResults": 5})
+        for item in listed.get("messages", []):
+            meta = google_sync.gmail("GET", f"messages/{item['id']}",
+                                     params={"format": "metadata", "metadataHeaders": header})
+            values = [decode(h.get("value", "")) for h in meta.get("payload", {}).get("headers", [])]
+            for name, found in email.utils.getaddresses(values):
+                if found.lower() == address and name.strip() and "@" not in name:
+                    return name.strip().strip('"')
+    return ""
+
+
 def find_contact_name(address):
     """
     Find the real name of an email address.
@@ -333,7 +347,14 @@ def find_contact_name(address):
     if not EMAIL_RE.fullmatch(address):
         return {"name": "", "source": ""}
 
-    if config.GMAIL_ADDRESS and config.GMAIL_APP_PASSWORD:
+    if google_sync.gmail_connected():  # Connect Gmail: no App Password needed
+        try:
+            name = gmail_contact_name(address)
+            if name:
+                return {"name": name, "source": "gmail"}
+        except google_sync.GoogleError:
+            pass  # no internet or sign-in problem: fall back to a guess
+    elif config.GMAIL_ADDRESS and config.GMAIL_APP_PASSWORD:
         try:
             with imaplib.IMAP4_SSL("imap.gmail.com", 993, timeout=20, ssl_context=ssl.create_default_context()) as imap:
                 imap.login(config.GMAIL_ADDRESS, config.GMAIL_APP_PASSWORD)

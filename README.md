@@ -146,6 +146,10 @@ Open `.env` and paste your keys (see below), or start Aura and fill them in from
 
 `.env` is in `.gitignore` and never leaves your PC. The Settings panel writes to it and applies changes at once;
 secrets are never sent to the page, only whether each one is set.
+On Windows, keys and passwords saved from Settings are stored locked (they look like `dpapi:AQAA...`): only your
+Windows account on your PC can unlock them, so a copied or backed-up `.env` gives nothing away. `Aura.exe` also locks
+any plain key it finds in `.env`. A key you paste into `.env` by hand still works. If you move `.env` to another PC or
+Windows account, enter the keys again in Settings.
 
 ### Optional features
 

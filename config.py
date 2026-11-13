@@ -11,11 +11,14 @@ model names on each provider's website:
   - OpenRouter: https://openrouter.ai/models?max_price=0   (free models)
 """
 
+import base64
+import ctypes
+import ctypes.wintypes
 import importlib
 import json
 import os
 import sys
-from dotenv import load_dotenv, set_key
+from dotenv import dotenv_values, load_dotenv, set_key
 
 # Folder where .env, outputs/ and logs/ live.
 # - Normal run (python desktop.py): the folder of this file.
@@ -34,13 +37,75 @@ else:
 ENV_FILE = os.path.join(BASE_DIR, ".env")
 load_dotenv(ENV_FILE)
 
+# Keys and passwords in .env are kept locked by Windows itself (DPAPI): only this Windows account on
+# this PC can unlock them, so a copied, synced or backed-up .env gives nothing away. A locked value
+# looks like  dpapi:AQAAANCM...  A plain value still works (you can paste a key into .env by hand).
+SECRET_NAMES = ("GROQ_API_KEY", "GROQ_API_KEY_SYSTEM", "GEMINI_API_KEY", "OPENROUTER_API_KEY",
+                "TAVILY_API_KEY", "GMAIL_APP_PASSWORD", "NOTION_TOKEN")
+LOCKED = "dpapi:"
+
+
+class _Blob(ctypes.Structure):  # DATA_BLOB: a length and a pointer to the bytes
+    _fields_ = [("size", ctypes.wintypes.DWORD), ("data", ctypes.c_void_p)]
+
+
+def _dpapi(data, lock):
+    """Windows locks (lock=True) or unlocks these bytes with a key tied to this Windows account."""
+    crypt32, kernel32 = ctypes.windll.crypt32, ctypes.windll.kernel32
+    kernel32.LocalFree.argtypes = [ctypes.c_void_p]
+    buffer = ctypes.create_string_buffer(data, len(data))
+    source, result = _Blob(len(data), ctypes.cast(buffer, ctypes.c_void_p)), _Blob()
+    call = crypt32.CryptProtectData if lock else crypt32.CryptUnprotectData
+    if not call(ctypes.byref(source), None, None, None, None, 0, ctypes.byref(result)):
+        raise OSError("Windows couldn't lock or unlock a saved key.")
+    try:
+        return ctypes.string_at(result.data, result.size)
+    finally:
+        kernel32.LocalFree(result.data)
+
+
+def lock_secret(value):
+    """'gsk_abc' -> 'dpapi:AQAA...' (unchanged when empty, or not on Windows)."""
+    if not value or sys.platform != "win32":
+        return value
+    return LOCKED + base64.b64encode(_dpapi(value.encode("utf-8"), True)).decode("ascii")
+
+
+def unlock_secret(value):
+    """'dpapi:AQAA...' -> 'gsk_abc'. "" if Windows can't unlock it (the .env came from another PC or account)."""
+    try:
+        return _dpapi(base64.b64decode(value[len(LOCKED):]), False).decode("utf-8")
+    except (OSError, ValueError, AttributeError):
+        return ""
+
+
+def _unlock_env():
+    """Give the programs the real keys (os.environ) while the .env file keeps only locked ones.
+    Aura.exe also locks any plain key it finds. Run from source, .env is left as you typed it."""
+    if not os.path.isfile(ENV_FILE):
+        return
+    for name, value in dotenv_values(ENV_FILE).items():
+        if name not in SECRET_NAMES or not value:
+            continue
+        if value.startswith(LOCKED):
+            if os.environ.get(name) == value:  # (after Settings saved one, os.environ already has the real key)
+                os.environ[name] = unlock_secret(value)
+        elif getattr(sys, "frozen", False):
+            try:
+                set_key(ENV_FILE, name, lock_secret(value))
+            except OSError:
+                pass  # couldn't lock it: it stays plain and still works
+
+
+_unlock_env()
+
 
 def save_env(values):
     """Settings panel: write {"NAME": "value"} to .env and use it at once.
     Every file reads config.X when it runs, so reloading this file is enough."""
     open(ENV_FILE, "a").close()  # set_key needs the file to exist
     for name, value in values.items():
-        set_key(ENV_FILE, name, value)
+        set_key(ENV_FILE, name, lock_secret(value) if name in SECRET_NAMES else value)
         os.environ[name] = value
     importlib.reload(sys.modules[__name__])
 
@@ -141,8 +206,7 @@ AGENT_MODELS = {
 # Settings > AI engine. The chosen engine goes first; if it fails or hits its
 # limit, the same call (same messages, so no context is lost) goes to the
 # other one: API models -> the agent's CLI, or CLI -> API models with a saved key.
-# The prompt goes in on stdin (Windows mangles long arguments to .cmd files),
-# except Antigravity's agy, which only takes it as an argument.
+# The prompt goes in on stdin (Windows mangles long arguments to .cmd files).
 # Pictures are saved as files next to it for the CLI to look at ("image_flag": attached instead).
 # Each runs in an empty folder, read-only, so it can only answer, not act:
 # Aura's own agents still do every action.
@@ -157,9 +221,13 @@ CLI_TOOLS = {
     "codex":       {"name": "Codex", "command": ["codex", "exec", "--skip-git-repo-check", "--ephemeral",
                                                  "-s", "read-only", "--color", "never", "-"], "stdin": True,
                     "image_flag": "--image="},
-    # agy's -p takes the next word as the prompt, so it goes last (llm.py appends the prompt after it)
-    "antigravity": {"name": "Antigravity", "command": ["agy", "--mode", "plan", "--sandbox",
-                                                       "--disable-slash-commands", "-p"], "stdin": False},
+    # agy ignores plain stdin, so the prompt goes in as one JSON line ("stream": llm.py writes and reads it);
+    # that keeps it out of the command line, which other programs on the PC can see. -p needs a value: "".
+    # (--mode plan is not used: agy says it has no effect with slash commands off, and those must stay off.)
+    "antigravity": {"name": "Antigravity", "command": ["agy", "--sandbox", "--disable-slash-commands",
+                                                       "--input-format", "stream-json",
+                                                       "--output-format", "stream-json", "-p", ""],
+                    "stdin": True, "stream": True},
     "opencode":    {"name": "OpenCode", "command": ["opencode", "run"], "stdin": True,
                     "env": {"OPENCODE_CONFIG_CONTENT": json.dumps(
                         {"permission": {"edit": "deny", "bash": "deny", "webfetch": "deny"}})}},

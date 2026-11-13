@@ -205,6 +205,7 @@ class Dock:
         self._shaped_at = 0.0                # when set_shape last started an animation (see _heal)
         self._recut_at = 0.0                 # when _heal last re-applied the cut-out
         self._reshown_at = 0.0               # when _repair last hid + showed the window
+        self._behind_logged = 0.0            # when dock.log last noted a dark window behind the dock
         self._last_glass = None
         self.position = config.DOCK_POSITION  # "top-mid", "bottom-left"... (config.DOCK_POSITIONS)
         self.autohide = config.DOCK_AUTOHIDE
@@ -385,7 +386,7 @@ class Dock:
     def _grey_box(self, hwnd):
         """True if the screen shows Windows' grey stand-in (32,32,32: a window that never drew)
         where the cut-out should show the desktop: 3 points on the side away from the dock.
-        shortcut: a wallpaper exactly that grey at all 3 points looks the same (repair is throttled)."""
+        A dark app behind the dock is exactly that grey too: _grey_behind tells the two apart."""
         user32, gdi32 = ctypes.windll.user32, ctypes.windll.gdi32
         rect = ctypes.wintypes.RECT()
         user32.GetWindowRect(hwnd, ctypes.byref(rect))
@@ -397,16 +398,31 @@ class Dock:
         finally:
             user32.ReleaseDC(0, dc)
 
+    def _grey_behind(self, hwnd):
+        """True if the screen is that grey even with the dock left out of the picture: then it is a
+        dark window behind the dock (Windows' dark apps use exactly this grey), not a fault of ours.
+        Only for dock.log, so the log can tell the two apart."""
+        user32, dwm = ctypes.windll.user32, ctypes.windll.dwmapi
+        user32.SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)
+        try:
+            dwm.DwmFlush()
+            dwm.DwmFlush()
+            return self._grey_box(hwnd)
+        finally:
+            user32.SetWindowDisplayAffinity(hwnd, WDA_NONE)
+
     def _repair(self, hwnd):
         """Clear the grey box: redraw with the cut-out (FRAMECHANGED cleared it live on 2026-11-07),
         and if it is still there, hide and show the window. Logged to dock.log."""
         user32 = ctypes.windll.user32
+        cause = "a dark window behind it" if self._grey_behind(hwnd) else "the dock itself"
         float_style(hwnd)
         self._cut(*self._target)
         user32.SetWindowPos(hwnd, 0, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0004 | 0x0010 | 0x0020)  # FRAMECHANGED
         time.sleep(0.5)
         step = "redraw"
-        if self._grey_box(hwnd) and time.time() - self._reshown_at > 30:  # not a flicker loop
+        # Hide + show can be seen (a blink), so only for a real grey box, and not as a flicker loop
+        if cause == "the dock itself" and self._grey_box(hwnd) and time.time() - self._reshown_at > 30:
             self._reshown_at = time.time()
             user32.ShowWindow(hwnd, 0)   # SW_HIDE
             time.sleep(0.2)
@@ -414,9 +430,13 @@ class Dock:
             self._cut(*self._target)
             time.sleep(0.5)
             step = "hide+show"
+        if cause != "the dock itself":  # a dark window can sit there for hours: one log line per 10 minutes
+            if time.time() - self._behind_logged < 600:
+                return
+            self._behind_logged = time.time()
         with open(os.path.join(config.LOG_DIR, "dock.log"), "a", encoding="utf-8") as f:
             f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} grey box, hwnd {hwnd}: {step} -> "
-                    f"{'STILL GREY' if self._grey_box(hwnd) else 'fixed'}\n")
+                    f"{'STILL GREY' if self._grey_box(hwnd) else 'fixed'} (the grey came from {cause})\n")
 
     def _glass_loop(self, run):
         """Keep the glass live while the dock is on screen: fast while things move behind it."""

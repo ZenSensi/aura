@@ -157,6 +157,8 @@ def _run_cli(tool, path, work, messages):
         command[-1:-1] = [tool["image_flag"] + os.path.join(work, n) for n in images]  # before codex's final "-"
     if not tool["stdin"]:
         command.append(prompt)
+    if tool.get("stream"):  # agy: the prompt as one JSON line
+        prompt = json.dumps({"event": "user", "message": {"content": prompt}}) + "\n"
     start = time.time()
     try:
         done = subprocess.run(command, input=prompt if tool["stdin"] else None, capture_output=True, text=True,
@@ -168,10 +170,24 @@ def _run_cli(tool, path, work, messages):
     except OSError as e:  # e.g. the prompt is too long for a Windows command line (agy)
         raise LLMError(f"Couldn't start {tool['name']}: {e}")
     text = re.sub(r"\x1b\[[0-9;]*m", "", done.stdout).strip()  # no terminal colours
+    if tool.get("stream"):
+        text = _stream_reply(text)
     if done.returncode != 0 or not text:
         short = " ".join(re.sub(r"\x1b\[[0-9;]*m", "", done.stderr or done.stdout).split())[-200:]
         raise LLMError(f"{tool['name']} failed: {short or 'empty reply'}")
     return {"text": text, "model": tool["name"], "seconds": round(time.time() - start, 2)}
+
+
+def _stream_reply(output):
+    """The answer out of agy's JSON lines: the "response" of its last "result" line ("" if there is none)."""
+    for line in reversed(output.splitlines()):
+        try:
+            data = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(data, dict) and data.get("event") == "result":
+            return str((data.get("result") or {}).get("response") or "").strip()
+    return ""
 
 
 def call_llm(agent_name, messages):

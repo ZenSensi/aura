@@ -40,6 +40,7 @@ TEXT_TYPES = {".txt", ".md", ".csv", ".json", ".log", ".xml", ".html", ".htm", "
 FILE_TYPES = IMAGE_TYPES | TEXT_TYPES | {".pdf", ".docx"}
 MAX_IMAGE_SIDE = 1600      # pixels; bigger pictures are shrunk before sending
 SCANNED_PAGES = 3          # pages sent as pictures from a PDF with no text
+MAX_DOCX_XML = 50_000_000  # bytes of text inside a Word file, unpacked (a real 1,000-page one is ~5 MB)
 
 SYSTEM_PROMPT = """You help the user with a file they attached. Do what they ask about it
 (summarise, explain, answer a question, extract details, describe a picture...).
@@ -84,13 +85,20 @@ def read_pdf(path):
     with fitz.open(path) as pdf:
         if pdf.needs_pass:
             raise ValueError("That PDF is password-protected, so I can't read it.")
-        pages = [f"--- Page {n} ---\n{page.get_text().strip()}" for n, page in enumerate(pdf, start=1)]
+        pages, length = [], 0
+        for n, page in enumerate(pdf, start=1):
+            pages.append(f"--- Page {n} ---\n{page.get_text().strip()}")
+            length += len(pages[-1])
+            if length > config.MAX_FILE_CHARS:  # the rest would be cut off anyway: don't read 5,000 pages
+                break
         text = "\n\n".join(pages)
         if len(re.sub(r"--- Page \d+ ---|\s", "", text)) > 100:
             return text, []
         images = []  # scanned: send pictures of the first pages instead
         for page in list(pdf)[:SCANNED_PAGES]:
-            pixmap = page.get_pixmap(dpi=110)
+            # 110 dpi, less for a huge page: its picture must not fill the memory
+            zoom = min(110 / 72, MAX_IMAGE_SIDE / max(page.rect.width, page.rect.height, 1))
+            pixmap = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
             images.append(Image.open(io.BytesIO(pixmap.tobytes("png"))))
         return "", images
 
@@ -99,6 +107,9 @@ def read_docx(path):
     """Text of a Word document: the words inside word/document.xml, one paragraph per line."""
     try:
         with zipfile.ZipFile(path) as z:
+            # A .docx is a zip: a tiny file can unpack to gigabytes ("zip bomb"), so check the size first
+            if z.getinfo("word/document.xml").file_size > MAX_DOCX_XML:
+                raise ValueError("That Word file is too big for me to read.")
             xml = z.read("word/document.xml").decode("utf-8", errors="ignore")
     except (zipfile.BadZipFile, KeyError):
         raise ValueError("That Word file looks damaged, so I can't read it.")
